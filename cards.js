@@ -129,6 +129,24 @@
     c.drawImage(oc, x, y, w, h);
   }
 
+  /* réduction d'image de bonne qualité (par moitiés successives), gardée en mémoire par taille */
+  const HQ = new Map();
+  function hq(img, px) {
+    px = Math.max(8, Math.round(px));
+    const k = (img.src || '').length + ':' + (img.src || '').slice(-32) + ':' + px;
+    let out = HQ.get(k); if (out) return out;
+    let src = img, w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+    const ratio = h / w;
+    while (w / 2 >= px) {
+      const t = document.createElement('canvas'); t.width = Math.round(w / 2); t.height = Math.round(w / 2 * ratio);
+      const x = t.getContext('2d'); x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high'; x.drawImage(src, 0, 0, t.width, t.height);
+      src = t; w = t.width;
+    }
+    out = document.createElement('canvas'); out.width = px; out.height = Math.round(px * ratio);
+    const o = out.getContext('2d'); o.imageSmoothingEnabled = true; o.imageSmoothingQuality = 'high'; o.drawImage(src, 0, 0, out.width, out.height);
+    HQ.set(k, out); if (HQ.size > 40) HQ.delete(HQ.keys().next().value);
+    return out;
+  }
   /* p = { nom, numero, poste, fond:'or'|'forme', photoImg, cadre:{zoom,ox,oy}, logoImg, stats:[[libellé, valeur],…] } */
   function drawCard(canvas, p, s) {
     const T = THEMES[p.fond] || THEMES.or;
@@ -162,7 +180,7 @@
     c.font = '800 ' + (num.length > 2 ? 64 : 84) + 'px ' + FONT; c.fillText(num, 74, 116);
     c.font = '700 28px ' + FONT; c.fillText(String(p.poste || '').toUpperCase(), 74, 150);
     if (p.logoImg) {
-      try { c.drawImage(p.logoImg, 49, 166, 50, 50); } catch (e) {}
+      try { c.drawImage(hq(p.logoImg, 54 * s), 47, 164, 54, 54); } catch (e) {}
     }
 
     const name = (p.nom || '').trim() || 'Joueur';

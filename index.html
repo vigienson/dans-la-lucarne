@@ -184,7 +184,7 @@ canvas.card-cv{display:block}
 .season .sb{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;padding:12px 14px 6px}
 .season .sb div{display:flex;flex-direction:column;align-items:center}
 .season .sb b{font-family:var(--cd);font-weight:800;font-size:20px}
-.season .sb span{font-size:12px;color:var(--mu)}
+.season .sb div>span{font-size:12px;color:var(--mu);text-align:center}
 .season .tr{display:flex;align-items:center;gap:8px;padding:6px 14px 12px;font-size:13px;font-weight:600;color:#FFC46B}
 /* configuration */
 .opt{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:14px;background:var(--s2);border:2px solid var(--line);text-align:left;width:100%}
@@ -210,6 +210,70 @@ input[type=color]{width:52px;height:44px;border:1px solid var(--line);border-rad
 .photo-ed canvas{touch-action:none;align-self:center}
 .range{width:100%;accent-color:var(--c2)}
 .share-hidden{position:fixed;left:-9999px;top:0}
+
+/* v1.1 : tableaux de stats avec icônes */
+.sboard{background:var(--s1);border-radius:18px;padding:14px 10px 12px;display:flex;flex-direction:column;gap:10px}
+.sboard>.lbl{padding:0 6px}
+.sgrid{display:grid;gap:6px}
+.si{display:flex;flex-direction:column;align-items:center;gap:3px;text-align:center}
+.sic{width:40px;height:40px;border-radius:12px;background:var(--s2);display:flex;align-items:center;justify-content:center;color:var(--tx2)}
+.sic svg{width:24px;height:24px}
+.si b{font-family:var(--cd);font-weight:800;font-size:30px;line-height:1}
+.si>span:last-child{font-size:12px;color:var(--mu)}
+.vndrow{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;border-top:1px solid var(--line2);padding-top:10px}
+.vndrow div{display:flex;align-items:baseline;justify-content:center;gap:6px}
+.vndrow b{font-family:var(--cd);font-weight:800;font-size:26px}
+.vndrow span{font-size:13px;color:var(--mu)}
+/* nouvelle rencontre */
+.newbig{display:flex;align-items:center;gap:14px;width:100%;padding:14px 16px;border-radius:18px;background:#10301F;border:2px solid #2FBF6B;color:#FFFFFF;text-align:left}
+.newbig .plus{width:52px;height:52px;border-radius:16px;background:#2FBF6B;color:#06210F;display:flex;align-items:center;justify-content:center;flex:none}
+.newbig .plus svg{width:30px;height:30px;stroke-width:2.6}
+.newbig b{display:block;font-family:var(--cd);font-weight:800;font-size:22px}
+.newbig small{display:block;font-size:13px;color:#A8DDBE}
+.pick3{display:flex;flex-direction:column;gap:10px}
+.pick3 button{display:flex;align-items:center;gap:12px;min-height:66px;padding:10px 14px;border-radius:16px;background:var(--s2);border:1px solid var(--line);color:var(--tx)}
+.pick3 b{display:block;font-size:17px}.pick3 small{display:block;font-size:13px;color:var(--mu)}
+.pick3 svg.ic{width:20px;height:20px;color:var(--mu)}
+/* saisie des buts */
+.pgrid.big{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.pb.big{min-height:64px;flex-direction:row;gap:10px;justify-content:flex-start;padding:6px 14px;font-size:18px;text-align:left}
+.pb.big i{font-style:normal;font-family:var(--cd);font-weight:800;font-size:20px;min-width:30px;height:30px;border-radius:50%;background:var(--c1);color:var(--on1);display:flex;align-items:center;justify-content:center;padding:0 4px}
+.pb.big span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pb.big.alt,.pb.big.csc{justify-content:center;font-size:15px;text-align:center}
+.pb.big.alt span,.pb.big.csc span{white-space:normal}
+.vs{display:inline-flex;align-items:center;justify-content:center;border-radius:50%;background:#2A3242;color:#FFFFFF;font-family:var(--cd);font-weight:800;border:2px solid rgba(255,255,255,.7);flex:none;box-sizing:border-box}
+.vs.inv{background:#FFFFFF;color:#C62828;border-color:#FFFFFF}
+.goal{min-height:132px;gap:6px;padding:10px 8px}
+.goal b{font-size:36px;letter-spacing:.04em}
+.goal .gl{display:flex;align-items:center;gap:8px;max-width:100%;font-family:'Barlow',sans-serif;font-weight:700;font-size:15px}
+.goal .gl>span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.clock{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap}
+/* glisser-déposer */
+[data-drag]{touch-action:none;-webkit-user-select:none;user-select:none}
+.drag-ghost{position:fixed;z-index:50;transform:translate(-50%,-60%);pointer-events:none;display:flex;flex-direction:column;align-items:center;gap:3px;color:#fff}
+.drag-ghost .tok{box-shadow:0 8px 20px rgba(0,0,0,.5);transform:scale(1.15)}
+.slot.over .tok{box-shadow:0 0 0 4px #2FBF6B}
+#toast{display:flex;align-items:center;gap:12px}
+#toast[hidden]{display:none}
+.toast-act{border:0;background:#0D1118;color:#FFFFFF;border-radius:10px;min-height:36px;padding:0 12px;font-weight:700}
+.syncdot{width:10px;height:10px;border-radius:50%;flex:none;background:var(--win)}
+.syncdot.busy{background:#FFC46B}.syncdot.err{background:var(--loss)}.syncdot.off{background:#6B7488}
+.bp{display:flex;align-items:center;gap:4px;justify-content:center}
+.bpi{display:inline-flex;width:18px;height:18px}.bpi svg{width:18px;height:18px}
+.bpi+.bpi,.bp .bpi:nth-of-type(2){margin-left:6px}
+/* tableau des joueurs */
+.ptable-wrap{overflow-x:auto;border-radius:14px;background:var(--s1);-webkit-overflow-scrolling:touch}
+.ptable{border-collapse:collapse;min-width:100%;font-size:14px}
+.ptable th,.ptable td{padding:0;text-align:center;white-space:nowrap;border-bottom:1px solid var(--line2)}
+.ptable td{font-family:var(--cd);font-weight:700;font-size:17px;padding:10px 8px}
+.ptable thead th button{background:none;border:0;color:var(--mu);font-size:12px;font-weight:700;padding:12px 8px;min-height:44px}
+.ptable thead th button.on{color:var(--c2)}
+.ptable td.on{color:var(--c2)}
+.ptable .pn{position:sticky;left:0;background:var(--s1);text-align:left;z-index:1}
+.ptable .pn button{background:none;border:0;color:var(--tx);font-weight:700;padding:10px 12px;min-height:44px;text-align:left;max-width:120px;overflow:hidden;text-overflow:ellipsis}
+.ptable thead .pn button{color:var(--mu);font-size:12px}
+.ptable tr.me .pn button{color:var(--c2)}
+.ptable tr.me td,.ptable tr.me .pn{background:var(--s2)}
 </style>
 </head>
 <body class="notabs">

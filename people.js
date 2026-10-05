@@ -33,7 +33,7 @@ ACT.addPlayer = () => {
 };
 ACT.editPlayer = () => {
   const p = player(cur().p.pid), me = p.id === suiviId();
-  openSheet('<h2>Modifier la carte</h2>' + playerForm(p) + (me ? '' : '<button type="button" class="btn2 danger" id="pfDel">Retirer de l\'effectif de la saison</button>') + '<div class="row"><button type="button" class="btn2" data-a="sheetClose">Annuler</button><button type="button" class="btn" id="pfOk">Enregistrer</button></div>');
+  openSheet('<h2>Modifier la carte</h2>' + playerForm(p) + (me ? '' : '<button type="button" class="btn2" data-a="setSuivi">' + ICON.star.replace('<svg ', '<svg style="width:18px;height:18px;color:var(--c2)" ') + 'Choisir comme joueur suivi</button><button type="button" class="btn2 danger" id="pfDel">Retirer de l\'effectif de la saison</button>') + '<div class="row"><button type="button" class="btn2" data-a="sheetClose">Annuler</button><button type="button" class="btn" id="pfOk">Enregistrer</button></div>');
   $('#pfOk').onclick = () => {
     const nom = $('#pfN').value.trim(); if (!nom) return toast('Le nom est vide.');
     commit([put('Joueurs', { id: p.id, nom, numero: $('#pfNum').value.trim(), poste: $('#pfP').value })]); closeSheet();
@@ -45,6 +45,13 @@ ACT.editPlayer = () => {
   };
 };
 
+ACT.setSuivi = async () => {
+  const p = player(cur().p.pid); $('#sheet').hidden = true; $('#sheet').innerHTML = '';
+  if (!await confirmBox('Suivre ' + p.nom + ' ?', p.nom + ' devient le joueur suivi : carte « En forme », photo, statistiques sur l\'accueil. ' + pname(suiviId()) + ' repasse en carte or.', 'Choisir ' + p.nom)) { render(); return; }
+  const S = curSeason(), ops = [put('Reglages', { id: 'suivi', valeur: p.id })];
+  if (!(S.effectif || []).includes(p.id)) ops.push(put('Saisons', { id: S.id, effectif: (S.effectif || []).concat(p.id) }));
+  commit(ops); render(); toast(p.nom + ' est maintenant le joueur suivi');
+};
 /* ---------- fiche joueur ---------- */
 SCREENS.fiche = p => {
   const pl = player(p.pid); if (!pl) return SCREENS.squad({});
@@ -56,6 +63,7 @@ SCREENS.fiche = p => {
     h += '<div class="row"><button type="button" class="btn2" data-a="photoNew">' + ICON.cam + (pl.photo ? 'Changer la photo' : 'Ajouter une photo') + '</button>' + (pl.photo ? '<button type="button" class="btn2" data-a="photoEdit" style="flex:none;width:auto">Recadrer</button>' : '') + '</div>';
     h += '<div class="seg" role="tablist"><button type="button" class="' + (t === 'res' ? 'on' : '') + '" data-a="fTab" data-t="res">Résumé</button><button type="button" class="' + (t === 'det' ? 'on' : '') + '" data-a="fTab" data-t="det">Par type et saison</button></div>';
   }
+  else h += '<button type="button" class="btn2" data-a="setSuivi">' + ICON.star.replace('<svg ', '<svg style="width:18px;height:18px;color:var(--c2)" ') + 'Choisir comme joueur suivi</button>';
   if (t === 'res') {
     const st = stats(S.id, pl.id);
     h += '<p class="lbl">Saison ' + esc(S.libelle) + '</p><div class="tiles t3">' +
@@ -135,14 +143,42 @@ SCREENS.palmares = () => {
     h += '<button type="button" class="season' + (s.id === cs ? ' cur' : '') + '" data-a="palSeason" data-id="' + s.id + '"><div class="sh" style="background:' + esc(s.couleur1) + ';color:' + on1 + '">' + (lg ? '<img src="' + lg + '" alt="">' : '') +
       '<div style="flex:1;min-width:0"><div class="cd" style="font-size:19px">' + esc(s.libelle) + '</div><div style="font-size:13px;opacity:.86">' + esc([s.club, s.categorie].filter(Boolean).join(' · ')) + '</div></div>' +
       (s.id === cs ? '<span style="background:' + esc(s.couleur2) + ';color:' + onColor(s.couleur2 || '#E5D52B') + ';border-radius:7px;padding:3px 8px;font-size:12px;font-weight:700">En cours</span>' : '<span style="font-size:12px;font-weight:700;opacity:.85">Archivée</span>') + '</div>' +
-      '<div class="sb"><div><b>' + t.mj + '</b><span>matchs</span></div><div><b>' + t.v + '-' + t.n + '-' + t.d + '</b><span>V-N-D</span></div><div><b style="color:var(--c2)">' + me.b + ' · ' + me.pd + '</b><span>' + esc(pname(pid)) + ' B · PD</span></div></div>' +
+      '<div class="sb"><div><b>' + t.mj + '</b><span>matchs</span></div><div><b>' + vndDash(t.v, t.n, t.d) + '</b><span>V-N-D</span></div><div><b class="bp"><span class="bpi" style="color:var(--c2)">' + ICON.ball + '</span>' + me.b + '<span class="bpi">' + ICON.boot + '</span>' + me.pd + '</b><span>' + esc(pname(pid)) + ' : buts · passes D</span></div></div>' +
       (bt ? '<div class="tr">' + ICON.trophy.replace('class="ic"', 'class="ic" style="width:16px;height:16px"') + esc(bt.r.txt + ' · ' + bt.e.titre) + '</div>' : '<div style="height:8px"></div>') + '</button>';
   });
   const car = stats('*', pid);
-  h += '<div class="card" style="flex-direction:row;align-items:center"><div style="flex:1"><div style="font-weight:700">Carrière de ' + esc(pname(pid)) + '</div><p class="mu">' + car.mj + ' matchs · ' + car.b + ' buts · ' + car.pd + ' passes D</p></div><button type="button" class="chip" data-a="go" data-s="fiche" data-p=\'{"pid":"' + pid + '","t":"det","sid":"*"}\'>Détail</button></div>';
+  h += '<div class="card" style="flex-direction:row;align-items:center"><div style="flex:1"><div style="font-weight:700">Carrière de ' + esc(pname(pid)) + '</div><p class="mu">' + car.mj + ' matchs · ' + bpLine(car.b, car.pd) + '</p></div><button type="button" class="chip" data-a="go" data-s="fiche" data-p=\'{"pid":"' + pid + '","t":"det","sid":"*"}\'>Détail</button></div>';
+  h += playersTable(PAL);
   h += '</div>';
   return { html: h, tab: 'palmares' };
 };
+/* tableau des joueurs, triable en touchant l'en-tête d'une colonne */
+const PAL = { sid: '', k: 'b', dir: -1 };
+const PCOLS = [['mj', 'MJ', 'Matchs joués'], ['b', 'Buts', ''], ['pd', 'PD', 'Passes décisives'], ['am', 'Amic.', 'Matchs amicaux'], ['pl', 'Plat.', 'Matchs en plateau'], ['to', 'Tourn.', 'Matchs en tournoi'], ['bm', 'B/M', 'Buts par match'], ['pm', 'PD/M', 'Passes D par match'], ['v', 'Vict.', 'Victoires']];
+function playersTable(P) {
+  const ss = seasons(), sid = P.sid || reg('saison');
+  const ids = new Set();
+  if (sid === '*') { ss.forEach(s => (s.effectif || []).forEach(x => ids.add(x))); }
+  else (DB.Saisons[sid] && DB.Saisons[sid].effectif || []).forEach(x => ids.add(x));
+  const list = Array.from(ids).filter(player).map(id => {
+    const st = stats(sid, id);
+    return { id, nom: pname(id), mj: st.mj, b: st.b, pd: st.pd, am: st.type.amical.mj, pl: st.type.plateau.mj, to: st.type.tournoi.mj, bm: st.mj ? st.b / st.mj : 0, pm: st.mj ? st.pd / st.mj : 0, v: st.v };
+  });
+  const k = P.k, dir = P.dir;
+  list.sort((a, b) => k === 'nom' ? dir * String(a.nom).localeCompare(b.nom) : dir * (a[k] - b[k]) || String(a.nom).localeCompare(b.nom));
+  const f = (r, c) => c === 'bm' || c === 'pm' ? r[c].toFixed(2).replace('.', ',') : r[c];
+  let h = '<div class="lbl-row" style="margin-top:6px"><p class="lbl">Statistiques des joueurs</p></div>';
+  h += '<div class="scroll-x">' + ss.map(s => '<button type="button" class="chip' + (s.id === sid ? ' on' : '') + '" data-a="palTSeason" data-id="' + s.id + '">' + esc(s.libelle) + '</button>').join('') + '<button type="button" class="chip' + (sid === '*' ? ' on' : '') + '" data-a="palTSeason" data-id="*">Toutes</button></div>';
+  if (!list.length) return h + '<div class="empty">Aucun joueur pour cette saison.</div>';
+  const arrow = c => c === k ? (dir < 0 ? ' ▼' : ' ▲') : '';
+  h += '<div class="ptable-wrap"><table class="ptable"><thead><tr><th class="pn"><button type="button" data-a="palSort" data-k="nom">Joueur' + arrow('nom') + '</button></th>' +
+    PCOLS.map(c => '<th><button type="button" data-a="palSort" data-k="' + c[0] + '" title="' + esc(c[2] || c[1]) + '"' + (c[0] === k ? ' class="on"' : '') + '>' + c[1] + arrow(c[0]) + '</button></th>').join('') + '</tr></thead><tbody>' +
+    list.map(r => '<tr' + (r.id === suiviId() ? ' class="me"' : '') + '><th class="pn"><button type="button" data-a="go" data-s="fiche" data-p=\'{"pid":"' + r.id + '"}\'>' + esc(r.nom) + '</button></th>' + PCOLS.map(c => '<td' + (c[0] === k ? ' class="on"' : '') + '>' + f(r, c[0]) + '</td>').join('') + '</tr>').join('') +
+    '</tbody></table></div><p class="mu">Touche un titre de colonne pour trier · MJ = matchs joués · B/M et PD/M = moyenne par match.</p>';
+  return h;
+}
+ACT.palSort = (el, d) => { if (PAL.k === d.k) PAL.dir = -PAL.dir; else { PAL.k = d.k; PAL.dir = d.k === 'nom' ? 1 : -1; } render(); };
+ACT.palTSeason = (el, d) => { PAL.sid = d.id; render(); };
 ACT.palSeason = (el, d) => { NAV = [{ s: 'list', p: { sid: d.id } }]; render(); };
 
 /* ---------- réglages ---------- */
@@ -154,14 +190,12 @@ SCREENS.settings = () => {
   h += '<div class="card"><p class="lbl">Club</p><div class="row">' + (lg ? '<img src="' + lg + '" alt="" style="width:50px;height:50px;object-fit:contain">' : '') + '<div style="flex:1"><div class="cd" style="font-size:20px">' + esc(S.club) + '</div><p class="mu">' + esc([S.abrev, S.categorie].filter(Boolean).join(' · ')) + '</p></div><span class="sw" style="background:var(--c1)"></span><span class="sw" style="background:var(--c2)"></span></div>' +
     '<button type="button" class="btn2" data-a="go" data-s="setup" data-p=\'{"edit":1}\'>Modifier ou changer de club</button><p class="mu">Logo, couleurs, nom et abréviation de la saison en cours. Les saisons passées gardent leur logo dans le Palmarès.</p></div>';
   h += '<div class="card"><p class="lbl">Saison</p><div class="lbl-row"><span class="cd" style="font-size:22px">' + esc(S.libelle) + '</span><span style="font-size:13px;font-weight:700;color:var(--win)">En cours</span></div><p class="mu">' + st.mj + ' matchs · ' + eventsOf(S.id).length + ' rencontres</p><button type="button" class="btn" data-a="go" data-s="endSeason">Archiver et démarrer la saison suivante</button></div>';
-  const pend = OUTBOX.length;
-  h += '<div class="card"><p class="lbl">Données</p><div class="row"><span class="dot" style="background:' + (!API_URL ? '#FFC46B' : SYNC.error ? 'var(--loss)' : pend ? '#FFC46B' : 'var(--win)') + '"></span><div style="flex:1"><div style="font-weight:600">Google Sheet</div><p class="mu">' + esc(!API_URL ? 'Non relié (config.js)' : SYNC.error ? SYNC.error : pend ? pend + ' modification(s) en attente' : 'À jour' + (SYNC.last ? ' · ' + new Date(SYNC.last).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '')) + '</p></div></div>' +
-    '<button type="button" class="btn2" data-a="syncNow">Synchroniser maintenant</button>' + (SYNC.sheetUrl ? '<a class="btn2" href="' + esc(SYNC.sheetUrl) + '" target="_blank" rel="noopener">Ouvrir le Google Sheet</a>' : '') +
+  h += '<div class="card"><p class="lbl">Données</p><div class="row"><span id="syncDot" class="syncdot ' + syncState() + '"></span><div style="flex:1"><div style="font-weight:600">Google Sheet · enregistrement automatique</div><p class="mu" id="syncTxt">' + esc(syncText()) + '</p></div></div>' +
+    (SYNC.sheetUrl ? '<a class="btn2" href="' + esc(SYNC.sheetUrl) + '" target="_blank" rel="noopener">Ouvrir le Google Sheet</a>' : '') +
     '<button type="button" class="btn2" data-a="changeCode">Changer le code d\'accès</button></div>';
   h += '</div>';
   return { html: h, tab: 'settings' };
 };
-ACT.syncNow = () => { SYNC.error = ''; flush(); toast('Synchronisation…'); };
 ACT.changeCode = () => {
   openSheet('<h2>Code d\'accès</h2><p class="mu">Le code choisi dans le script Google (CODE_ACCES).</p><div class="field"><label for="ccC">Code</label><input id="ccC" class="inp" inputmode="numeric" value="' + esc(CODE) + '"></div><div class="row"><button type="button" class="btn2" data-a="sheetClose">Annuler</button><button type="button" class="btn" id="ccOk">Enregistrer</button></div>');
   $('#ccOk').onclick = async () => { const c = $('#ccC').value.trim(); try { await api('ping', [c]); CODE = c; LS.set('code', c); SYNC.error = ''; closeSheet(); flush(); toast('Code enregistré'); } catch (e) { toast(e.badCode ? 'Code refusé.' : e.message); } };
@@ -296,7 +330,7 @@ ACT.suSave = () => {
 
 /* détourage du logo : retire le fond uni (blanc ou autre) relié aux bords, puis recadre */
 function cutoutLogo(im) {
-  const max = 320, k = Math.min(1, max / Math.max(im.naturalWidth, im.naturalHeight));
+  const max = 600, k = Math.min(1, max / Math.max(im.naturalWidth, im.naturalHeight));
   const w = Math.max(1, Math.round(im.naturalWidth * k)), h = Math.max(1, Math.round(im.naturalHeight * k));
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const x = c.getContext('2d'); x.drawImage(im, 0, 0, w, h);
@@ -330,7 +364,7 @@ function cutoutLogo(im) {
   for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) if (a[(j * w + i) * 4 + 3] > 24) { if (i < x0) x0 = i; if (i > x1) x1 = i; if (j < y0) y0 = j; if (j > y1) y1 = j; }
   if (x1 < 0) return c.toDataURL('image/png');
   const cw = x1 - x0 + 1, ch = y1 - y0 + 1, side = Math.max(cw, ch);
-  const o = document.createElement('canvas'); const out = Math.min(256, side); o.width = o.height = out;
+  const o = document.createElement('canvas'); const out = Math.min(512, side); o.width = o.height = out;
   const sc = out / side;
   o.getContext('2d').drawImage(c, x0, y0, cw, ch, (out - cw * sc) / 2, (out - ch * sc) / 2, cw * sc, ch * sc);
   return o.toDataURL('image/png');
@@ -369,7 +403,7 @@ SCREENS.endSeason = p => {
   const next = p.lib || (p.lib = nextLabel(S.libelle)), cat = p.cat != null ? p.cat : (p.cat = nextCat(S.categorie));
   let h = topBar('Fin de saison', 'Archiver ' + S.libelle, { back: true });
   h += '<div class="main"><div class="card"><p class="lbl">1 · Bilan archivé</p><div class="row">' + (lg ? '<img src="' + lg + '" alt="" style="width:40px;height:40px;object-fit:contain">' : '') + '<div style="flex:1"><div class="cd" style="font-size:18px">' + esc(S.club + (S.categorie ? ' · ' + S.categorie : '')) + '</div><p class="mu">Logo et couleurs gardés avec la saison</p></div></div>' +
-    '<div class="tiles t3" style="grid-template-columns:repeat(2,minmax(0,1fr))">' + tl(t.mj + ' matchs', t.v + ' V · ' + t.n + ' N · ' + t.d + ' D') + tl(t.bp + ' – ' + t.bc, 'buts pour – contre') + tl(esc(pname(suiviId())) + ' ' + me.b + ' B · ' + me.pd + ' PD', 'joueur suivi', 'color:var(--c2);font-size:18px') + tl(bt ? esc(bt.r.txt) : '—', bt ? esc(bt.e.titre) : 'aucun tournoi', 'font-size:20px') + '</div></div>';
+    '<div class="tiles t3" style="grid-template-columns:repeat(2,minmax(0,1fr))">' + tl(t.mj + ' matchs', vnd(t.v, t.n, t.d, ' · ')) + tl(t.bp + ' – ' + t.bc, 'buts pour – contre') + tl(esc(pname(suiviId())) + ' ' + me.b + ' B · ' + me.pd + ' PD', 'joueur suivi', 'color:var(--c2);font-size:18px') + tl(bt ? esc(bt.r.txt) : '—', bt ? esc(bt.e.titre) : 'aucun tournoi', 'font-size:20px') + '</div></div>';
   h += '<div class="card"><p class="lbl">2 · Nouvelle saison</p><div class="row"><div class="field" style="flex:1"><label for="esL">Saison</label><input id="esL" class="inp" value="' + esc(next) + '"></div><div class="field" style="flex:1"><label for="esC">Catégorie</label><input id="esC" class="inp" value="' + esc(cat) + '"></div></div>' +
     '<div class="lbl-row"><span style="font-weight:700">Reconduire l\'effectif</span><span class="mu">' + keep.length + ' sur ' + R.length + '</span></div><div class="chips">' +
     R.map(x => { const on = keep.includes(x.id); return '<button type="button" class="pchip' + (on ? '' : ' off') + '" data-a="esKeep" data-id="' + x.id + '"' + (x.id === suiviId() ? ' disabled' : '') + '><span class="tok' + (x.id === suiviId() ? ' me' : '') + '">' + (on ? '✓' : '–') + '</span>' + esc(x.nom) + '</button>'; }).join('') + '</div>' +
@@ -453,5 +487,11 @@ ACT.shareMatch = async () => { const m = DB.Matchs[cur().p.mid], e = DB.Rencontr
   if (API_URL && CODE) flush();
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && API_URL && CODE) flush(); });
   window.addEventListener('online', () => flushSoon(500));
-  if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    const had = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.register('sw.js').then(r => { try { r.update(); } catch (e) {} }).catch(() => {});
+    /* nouvelle version installée : on recharge une fois pour l'utiliser tout de suite */
+    let done = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (had && !done) { done = true; location.reload(); } });
+  }
 })();
