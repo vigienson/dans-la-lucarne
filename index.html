@@ -20,6 +20,7 @@
 @font-face{font-family:'Barlow Condensed';font-style:normal;font-weight:600;font-display:swap;src:url(fonts/barlow-condensed-600.woff2) format('woff2')}
 @font-face{font-family:'Barlow Condensed';font-style:normal;font-weight:700;font-display:swap;src:url(fonts/barlow-condensed-700.woff2) format('woff2')}
 @font-face{font-family:'Barlow Condensed';font-style:normal;font-weight:800;font-display:swap;src:url(fonts/barlow-condensed-800.woff2) format('woff2')}
+@font-face{font-family:'Barlow Condensed';font-style:normal;font-weight:900;font-display:swap;src:url(fonts/barlow-condensed-900.woff2) format('woff2')}
 @font-face{font-family:'Barlow Semi Condensed';font-style:normal;font-weight:600;font-display:swap;src:url(fonts/barlow-semi-condensed-600.woff2) format('woff2')}
 @font-face{font-family:'Barlow Semi Condensed';font-style:normal;font-weight:700;font-display:swap;src:url(fonts/barlow-semi-condensed-700.woff2) format('woff2')}
 @font-face{font-family:'Barlow Semi Condensed';font-style:normal;font-weight:800;font-display:swap;src:url(fonts/barlow-semi-condensed-800.woff2) format('woff2')}
@@ -211,6 +212,12 @@ input[type=color]{width:52px;height:44px;border:1px solid var(--line);border-rad
 .range{width:100%;accent-color:var(--c2)}
 .share-hidden{position:fixed;left:-9999px;top:0}
 
+/* v1.2 */
+.recap-box{display:flex;flex-direction:column;gap:10px}
+.recap-cv{width:100%;aspect-ratio:1080/1350;border-radius:16px;display:block;background:var(--s1);box-shadow:0 10px 30px rgba(0,0,0,.35)}
+textarea.inp{font-family:inherit;font-size:15px;line-height:1.4}
+.spin{width:34px;height:34px;border-radius:50%;border:4px solid rgba(255,255,255,.18);border-top-color:#F1F1F2;animation:sp 1s linear infinite;margin-bottom:10px}
+@keyframes sp{to{transform:rotate(360deg)}}
 /* v1.1 : tableaux de stats avec icônes */
 .sboard{background:var(--s1);border-radius:18px;padding:14px 10px 12px;display:flex;flex-direction:column;gap:10px}
 .sboard>.lbl{padding:0 6px}
@@ -294,6 +301,7 @@ input[type=color]{width:52px;height:44px;border:1px solid var(--line);border-rad
 <script src="cards.js"></script>
 <script src="core.js"></script>
 <script src="screens.js"></script>
+<script src="recap.js"></script>
 <script src="people.js"></script>
 </body>
 </html>

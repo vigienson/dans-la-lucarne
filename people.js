@@ -191,10 +191,28 @@ SCREENS.settings = () => {
     '<button type="button" class="btn2" data-a="go" data-s="setup" data-p=\'{"edit":1}\'>Modifier ou changer de club</button><p class="mu">Logo, couleurs, nom et abréviation de la saison en cours. Les saisons passées gardent leur logo dans le Palmarès.</p></div>';
   h += '<div class="card"><p class="lbl">Saison</p><div class="lbl-row"><span class="cd" style="font-size:22px">' + esc(S.libelle) + '</span><span style="font-size:13px;font-weight:700;color:var(--win)">En cours</span></div><p class="mu">' + st.mj + ' matchs · ' + eventsOf(S.id).length + ' rencontres</p><button type="button" class="btn" data-a="go" data-s="endSeason">Archiver et démarrer la saison suivante</button></div>';
   h += '<div class="card"><p class="lbl">Données</p><div class="row"><span id="syncDot" class="syncdot ' + syncState() + '"></span><div style="flex:1"><div style="font-weight:600">Google Sheet · enregistrement automatique</div><p class="mu" id="syncTxt">' + esc(syncText()) + '</p></div></div>' +
+    (REJECTED.length ? '<div style="background:#2A1416;border:1px solid #5A2A2A;border-radius:12px;padding:10px 12px"><b style="color:#FF8F86">' + REJECTED.length + ' modification(s) refusée(s) par le Google Sheet</b><p class="mu">' + esc(REJECTED[REJECTED.length - 1].err) + '</p><div class="row" style="margin-top:8px"><button type="button" class="btn2" data-a="rejRetry">Réessayer</button><button type="button" class="btn2" data-a="rejDrop">Ignorer</button></div></div>' : '') +
+    '<button type="button" class="btn2" data-a="diag">Tester la connexion</button>' +
     (SYNC.sheetUrl ? '<a class="btn2" href="' + esc(SYNC.sheetUrl) + '" target="_blank" rel="noopener">Ouvrir le Google Sheet</a>' : '') +
-    '<button type="button" class="btn2" data-a="changeCode">Changer le code d\'accès</button></div>';
+    (CFG_CODE ? '' : '<button type="button" class="btn2" data-a="changeCode">Changer le code d\'accès</button>') + '</div>';
   h += '</div>';
   return { html: h, tab: 'settings' };
+};
+ACT.rejRetry = () => { REJECTED.forEach(r => OUTBOX.push(r.op)); REJECTED = []; LS.set('rejected', []); saveOutbox(); SYNC.since = Date.now(); flushSoon(100); render(); };
+ACT.rejDrop = async () => { if (!await confirmBox('Ignorer ?', 'Ces modifications refusées ne seront pas enregistrées dans le Google Sheet.', 'Ignorer', true)) { render(); return; } REJECTED = []; LS.set('rejected', []); rebuildDb(); render(); };
+/* test de connexion (diagnostic) : temps de réponse, version du script, code */
+ACT.diag = async () => {
+  openSheet('<h2>Test de connexion</h2><div class="card" style="align-items:center"><div class="spin"></div><p class="mu">Appel du script Google…</p></div>');
+  const t0 = Date.now(); let ok = false, lines = [];
+  try {
+    const r = await api('ping', [CODE], 20000);
+    ok = true;
+    lines = [['Script Google', 'répond en ' + ((Date.now() - t0) / 1000).toFixed(1).replace('.', ',') + ' s'], ['Version du script', r.version || '1.0 / 1.1 (à mettre à jour)'], ['Code d\'accès', 'accepté']];
+  } catch (e) { lines = [['Problème', e.message], ['Délai', ((Date.now() - t0) / 1000).toFixed(1).replace('.', ',') + ' s']]; }
+  lines.push(['En attente d\'envoi', String(OUTBOX.length)], ['Refusées', String(REJECTED.length)], ['Dernier envoi réussi', SYNC.last ? new Date(SYNC.last).toLocaleString('fr-FR') : 'jamais'], ['Appli', 'version ' + VERSION_APP]);
+  if (SYNC.error) lines.push(['Dernière erreur', SYNC.error]);
+  openSheet('<h2>' + (ok ? 'Connexion OK' : 'Connexion impossible') + '</h2><div class="tbl">' + lines.map(l => '<div class="tr"><span class="mu" style="flex:1">' + esc(l[0]) + '</span><span style="font-weight:700;text-align:right;max-width:60%">' + esc(l[1]) + '</span></div>').join('') + '</div><button type="button" class="btn" data-a="sheetClose">Fermer</button>');
+  if (ok && OUTBOX.length) flushSoon(50);
 };
 ACT.changeCode = () => {
   openSheet('<h2>Code d\'accès</h2><p class="mu">Le code choisi dans le script Google (CODE_ACCES).</p><div class="field"><label for="ccC">Code</label><input id="ccC" class="inp" inputmode="numeric" value="' + esc(CODE) + '"></div><div class="row"><button type="button" class="btn2" data-a="sheetClose">Annuler</button><button type="button" class="btn" id="ccOk">Enregistrer</button></div>');
@@ -229,9 +247,15 @@ SCREENS.setup = p => {
   if (!isStandalone() && !edit) h += installCard(true);
   if (needCode) {
     h += '<div class="field"><label for="suCode">Code d\'accès</label><input id="suCode" class="inp" inputmode="numeric" autocomplete="off" placeholder="Code choisi dans le script Google"></div><button type="button" class="btn" data-a="suConnect">Continuer</button>';
-    h += '<p class="mu">Le code se trouve en haut du script Google (ligne CODE_ACCES). Si l\'appli a déjà été configurée sur un autre téléphone, tout sera récupéré.</p></div>';
+    h += '<p class="mu">Le code se trouve en haut du script Google (ligne CODE_ACCES). Astuce : en l\'écrivant aussi dans config.js (ligne code), plus personne n\'aura à le saisir.</p></div>';
     return { html: h, neutral: true };
   }
+  /* premier lancement : on regarde d'abord si le club est déjà configuré dans le Google Sheet */
+  if (!edit && API_URL && CODE && !SYNC.first) {
+    h += '<div class="card" style="align-items:center;text-align:center;padding:28px 16px"><div class="spin"></div><div style="font-weight:700">Connexion au Google Sheet…</div><p class="mu">Si le club est déjà configuré, l\'appli s\'ouvre directement.</p></div></div>';
+    return { html: h, neutral: true };
+  }
+  if (!edit && SYNC.error && !curSeason()) h += '<div class="card" style="border:1px solid #5A2A2A"><b>Google Sheet injoignable</b><p class="mu">' + esc(SYNC.error) + ' Tu peux configurer quand même : tout sera envoyé dès que possible.</p></div>';
   if (!SET || SET.edit !== edit) SET = setupDraft(edit);
   const F = SET;
   h += '<div class="card"><div class="upl"><div class="pv">' + (F.logo ? '<img src="' + F.logo + '" alt="Logo du club">' : '<span class="mu" style="font-size:12px">Logo</span>') + '</div><div style="flex:1;display:flex;flex-direction:column;gap:6px"><p class="lbl">Logo du club</p><p class="mu">' + (F.logo ? 'Fond retiré automatiquement' : 'Une image du logo (PNG ou JPG)') + '</p><button type="button" class="btn2" style="min-height:40px" data-a="suLogo">' + (F.logo ? 'Changer le logo' : 'Importer le logo') + '</button></div></div></div>';
@@ -429,7 +453,116 @@ ACT.esGo = async () => {
   else { NAV = [{ s: 'palmares', p: {} }]; render(); toast('Saison archivée'); }
 };
 
-/* ---------- image de résumé à partager ---------- */
+/* ---------- comptes rendus (image + texte à partager) : v1.2 ---------- */
+const APP_ICON = new Image(); APP_ICON.onload = () => paintRecaps(); APP_ICON.src = 'icons/icon-192.png';
+/* polices du compte rendu chargées avant de le dessiner */
+if (document.fonts) Promise.all(['900 40px "Barlow Condensed"', '700 40px "Barlow Condensed"', '800 40px "Barlow Semi Condensed"', '700 40px "Barlow Semi Condensed"', '600 40px "Barlow Semi Condensed"', '600 40px Barlow'].map(f => document.fonts.load(f).catch(() => {})))
+  .then(() => { RECAP_CACHE.clear(); $$('canvas.recap-cv').forEach(c => c._big = null); paintRecaps(); });
+const PH_SHORT = { 'Quart de finale': 'Quart', 'Demi-finale': 'Demi', 'Match de classement': 'Classement', '32e de finale': '32e', '16e de finale': '16e', '8e de finale': '8e' };
+const phShort = ph => { const b = phaseBase(ph), g = String(ph || '').split(' · ')[1]; return (PH_SHORT[b] || b) + (g ? ' ' + g : ''); };
+const QUOTES_N = ['Un point de pris, on lâche rien.', 'Match serré, on reviendra plus forts.', 'Partage des points, la suite au prochain épisode.'];
+const QUOTES_D = [['TÊTE HAUTE !', 'On apprend, et on revient plus forts.'], ['ON SE RELÈVE !', 'Les grandes équipes savent rebondir.'], ['ON REMET ÇA !', 'La prochaine sera la bonne.']];
+const hash = s => { let h = 0; String(s).split('').forEach(c => h = (h * 31 + c.charCodeAt(0)) | 0); return Math.abs(h); };
+function koRes(m) { const s = score(m); if (s.p === s.c && m.tab && m.tab.nous != null) return wonKO(m) ? 'V' : 'D'; return result(m); }
+/* données du compte rendu d'une rencontre (ou d'un seul match si mid est donné) */
+function recapData(e, mid) {
+  const S = DB.Saisons[e.saison] || curSeason() || {}, pid = suiviId(), p = player(pid);
+  const ms = mid ? [DB.Matchs[mid]].filter(Boolean) : matchesOf(e.id).filter(isDone);
+  if (!ms.length) return null;
+  const kind = mid && e.type !== 'amical' ? 'amical' : e.type;
+  const R = {
+    kind, title: evTitle(e), date: fdate(e.date, true),
+    label: mid && e.type !== 'amical' ? (TYPE_LBL[e.type] + (ms[0].phase ? ' · ' + phShort(ms[0].phase) : '')).toUpperCase() : { amical: 'MATCH AMICAL', plateau: 'PLATEAU', tournoi: 'TOURNOI' }[e.type],
+    club: { name: S.club || '', abbr: S.abrev || '', cat: S.categorie || '', c1: S.couleur1 || '#2A4B71', c2: S.couleur2 || '#E5D52B', logoImg: imgEl(S.logo) },
+    appIcon: APP_ICON.complete && APP_ICON.naturalWidth ? APP_ICON : null,
+    matches: ms.map(m => { const s = score(m); return { phase: e.type === 'tournoi' ? phShort(m.phase) : '', opp: m.adversaire || '?', p: s.p, c: s.c, tab: m.tab && m.tab.nous != null ? m.tab.nous + '-' + m.tab.eux : '', res: koRes(m) }; })
+  };
+  const st = { mj: ms.length, v: 0, n: 0, d: 0, bp: 0, bc: 0 };
+  R.matches.forEach(m => { st[m.res.toLowerCase()]++; st.bp += m.p; st.bc += m.c; });
+  R.stats = st;
+  /* buts du match (pour un seul match) */
+  if (ms.length === 1) R.goals = goalsOf(ms[0].id).filter(g => g.camp === 'nous').map(g => ({ who: goalWho(g), pass: g.passeur ? pname(g.passeur) : '', min: num(g.minute), me: g.buteur === pid }));
+  /* joueur suivi */
+  const tally = {}; ms.forEach(m => goalsOf(m.id).forEach(g => { if (g.camp === 'nous' && g.buteur) tally[g.buteur] = (tally[g.buteur] || 0) + 1; }));
+  const played = ms.filter(m => inMatch(m, pid)).length;
+  if (p && (played || tally[pid])) {
+    let b = 0, pd = 0; ms.forEach(m => { const x = playerLine(m, pid); b += x.b; pd += x.pd; });
+    const max = Math.max(0, ...Object.values(tally));
+    const official = e.type === 'tournoi' && !mid && String(e.distinctions || '').includes('buteur');
+    const ribbon = official ? 'MEILLEUR BUTEUR DU TOURNOI' : (kind !== 'amical' && b > 0 && b === max ? 'MEILLEUR BUTEUR DE L\'ÉQUIPE' : '');
+    let line = plural(b, 'but', 'buts') + ' · ' + plural(pd, 'passe D', 'passes D');
+    if (kind === 'amical' && st.d && b && b === st.bp && st.bp === 1) line = '1 but · le but de l\'honneur';
+    const card = document.createElement('canvas');
+    const cd = cardData(pid, false); cd.stats = [['MJ', played], ['BUTS', b], ['PASSES D', pd]];
+    try { PFT_CARDS.drawCard(card, cd, 1.4); } catch (er) {}
+    R.me = { name: p.nom, b, pd, top: !!ribbon, ribbon, line, card, _k: cd._k };
+  }
+  /* résultat et textes */
+  if (kind === 'amical') {
+    R.outcome = R.matches[0].res;
+    const q = hash(e.id + (mid || ''));
+    R.quote = QUOTES_N[q % QUOTES_N.length]; R.quoteTitle = QUOTES_D[q % QUOTES_D.length][0]; if (R.outcome === 'D') R.quote = QUOTES_D[q % QUOTES_D.length][1];
+  } else if (e.type === 'tournoi') {
+    const r = eventResult(e);
+    R.outcome = r.txt === 'Vainqueur' ? 'champion' : 'mixed';
+    R.headline = r.txt === 'Finaliste' ? 'FINALISTE' : r.txt === 'Phase de poules' ? 'BILAN DU TOURNOI' : r.txt === 'Vainqueur' ? 'VAINQUEUR' : String(r.txt).toUpperCase();
+  } else { R.outcome = 'mixed'; R.headline = 'BILAN DU PLATEAU'; }
+  return R;
+}
+function recapKey(R) { return JSON.stringify(Object.assign({}, R, { club: Object.assign({}, R.club, { logoImg: !!R.club.logoImg }), appIcon: !!R.appIcon, me: R.me ? Object.assign({}, R.me, { card: R.me._k }) : null })); }
+const RECAP_CACHE = new Map();
+function recapCanvas(R) {
+  const k = recapKey(R); let c = RECAP_CACHE.get(k);
+  if (!c) { c = document.createElement('canvas'); DLL_RECAP.drawRecap(c, R); RECAP_CACHE.set(k, c); if (RECAP_CACHE.size > 12) RECAP_CACHE.delete(RECAP_CACHE.keys().next().value); }
+  return c;
+}
+/* aperçu dans l'appli : <canvas class="recap-cv" data-ev="…" data-m="…"> */
+function recapPreview(eid, mid) {
+  return '<div class="recap-box"><canvas class="recap-cv" data-ev="' + esc(eid) + '"' + (mid ? ' data-m="' + esc(mid) + '"' : '') + ' aria-label="Compte rendu"></canvas>' +
+    '<div class="row"><button type="button" class="btn" data-a="shareImg" data-ev="' + esc(eid) + '"' + (mid ? ' data-m="' + esc(mid) + '"' : '') + '>' + ICON.share + 'Partager l\'image</button>' +
+    '<button type="button" class="btn2" data-a="shareTxt" data-ev="' + esc(eid) + '"' + (mid ? ' data-m="' + esc(mid) + '"' : '') + ' style="flex:none;width:auto">Texte</button></div></div>';
+}
+function paintRecaps() {
+  $$('canvas.recap-cv').forEach(cv => {
+    const e = DB.Rencontres[cv.dataset.ev]; if (!e) return;
+    const R = recapData(e, cv.dataset.m || ''); if (!R) { cv.parentNode.style.display = 'none'; return; }
+    try {
+      const big = recapCanvas(R), dpr = Math.min(2, window.devicePixelRatio || 1), w = Math.round((cv.clientWidth || 340) * dpr);
+      if (cv._big === big && cv.width === w) return;
+      cv.width = w; cv.height = Math.round(w * DLL_RECAP.H / DLL_RECAP.W);
+      const x = cv.getContext('2d'); x.imageSmoothingQuality = 'high'; x.drawImage(big, 0, 0, cv.width, cv.height); cv._big = big;
+    } catch (er) { console.error(er); }
+  });
+}
+function recapText(R) {
+  const opp = R.matches[0] ? R.matches[0].opp : '', sc = R.matches[0] ? R.matches[0].p + '-' + R.matches[0].c : '';
+  const me = R.me, meLine = me && (me.b || me.pd) ? me.name + ' : ' + me.line.replace(' · ', ' et ') : '';
+  let t;
+  if (R.kind === 'amical') {
+    const buts = (R.goals || []).map(g => g.who + ' ' + g.min + '\'').join(', ');
+    if (R.outcome === 'V') t = '✅ VICTOIRE ' + sc + ' contre ' + opp + ' !' + (buts ? '\n⚽ ' + buts : '') + (meLine ? '\n🔥 ' + meLine : '');
+    else if (R.outcome === 'N') t = '🤝 Match nul ' + sc + ' contre ' + opp + '. ' + R.quote + (buts ? '\n⚽ ' + buts : '') + (meLine ? '\n👊 ' + meLine : '');
+    else t = '💪 Défaite ' + sc + ' contre ' + opp + ', mais tête haute !' + (me && me.b ? ' ' + me.name + ' a marqué' + ((R.goals || []).filter(g => g.me).map(g => ' (' + g.min + '\')').join('')) + '.' : '') + ' On remet ça !';
+  } else if (R.outcome === 'champion') {
+    t = '🏆 VAINQUEURS du ' + R.title + ' ! ' + R.stats.mj + ' matchs, ' + R.stats.v + ' victoires, ' + R.stats.bp + ' buts marqués.' + (me && me.ribbon ? '\n⚽ ' + me.name + ' finit ' + me.ribbon.toLowerCase().replace('meilleur buteur', 'meilleur buteur') + ' avec ' + me.line.replace(' · ', ' et ') + '.' : meLine ? '\n⚽ ' + meLine : '') + '\nQuelle journée ! 🎉';
+  } else {
+    const head = R.headline === 'FINALISTE' ? '🥈 Finalistes du ' + R.title + ' !' : R.kind === 'tournoi' ? '🏟️ ' + R.title + ' : ' + R.headline.toLowerCase() : '📋 ' + R.title;
+    t = head + '\n' + R.stats.v + ' victoire' + (R.stats.v > 1 ? 's' : '') + ', ' + R.stats.n + ' nul' + (R.stats.n > 1 ? 's' : '') + ', ' + R.stats.d + ' défaite' + (R.stats.d > 1 ? 's' : '') + ' · ' + R.stats.bp + ' buts marqués.' + (meLine ? '\n⚽ ' + meLine + (me.ribbon ? ' (' + me.ribbon.toLowerCase() + ')' : '') : '');
+  }
+  return t + '\n— ' + [R.club.name, R.club.cat].filter(Boolean).join(' ') + ' · Dans la Lucarne';
+}
+function recapFor(d) { const e = DB.Rencontres[d.ev]; return e ? recapData(e, d.m || '') : null; }
+ACT.shareImg = async (el, d) => {
+  const R = recapFor(d); if (!R) return;
+  const cv = recapCanvas(R);
+  shareCanvas(cv, 'dans-la-lucarne-' + String(R.title).replace(/[^a-z0-9]+/gi, '-').toLowerCase(), recapText(R));
+};
+ACT.shareTxt = async (el, d) => {
+  const R = recapFor(d); if (!R) return; const t = recapText(R);
+  try { if (navigator.share) { await navigator.share({ text: t }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }
+  openSheet('<h2>Texte à partager</h2><textarea class="inp" style="height:180px;padding:10px;white-space:pre-wrap" readonly>' + esc(t) + '</textarea><div class="row"><button type="button" class="btn2" id="txCopy">Copier</button><a class="btn" href="https://wa.me/?text=' + encodeURIComponent(t) + '" target="_blank" rel="noopener">WhatsApp</a></div><button type="button" class="btn2" data-a="sheetClose">Fermer</button>');
+  $('#txCopy').onclick = async () => { try { await navigator.clipboard.writeText(t); toast('Texte copié'); } catch (e) { toast('Copie impossible'); } };
+};
 async function shareCanvas(cv, name, text) {
   const blob = await new Promise(ok => cv.toBlob(ok, 'image/png'));
   const file = new File([blob], name + '.png', { type: 'image/png' });
@@ -437,48 +570,14 @@ async function shareCanvas(cv, name, text) {
     if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], text }); return; }
   } catch (e) { if (e && e.name === 'AbortError') return; }
   const url = URL.createObjectURL(blob);
-  openSheet('<h2>Image du résumé</h2><img src="' + url + '" alt="Résumé" style="width:100%;border-radius:12px"><a class="btn" href="' + url + '" download="' + esc(name) + '.png">' + ICON.dl + 'Enregistrer l\'image</a><button type="button" class="btn2" data-a="sheetClose">Fermer</button>');
+  openSheet('<h2>Compte rendu</h2><img src="' + url + '" alt="Compte rendu" style="width:100%;border-radius:12px"><a class="btn" href="' + url + '" download="' + esc(name) + '.png">' + ICON.dl + 'Enregistrer l\'image</a><button type="button" class="btn2" data-a="sheetClose">Fermer</button>');
 }
-async function summaryImage(e, ms) {
-  const S = curSeason() || {}, W = 1080, H = 1350, c = document.createElement('canvas'); c.width = W; c.height = H;
-  const x = c.getContext('2d'), F = '"Barlow Semi Condensed","Arial Narrow",sans-serif';
-  try { await document.fonts.load('800 40px "Barlow Semi Condensed"'); } catch (er) {}
-  x.fillStyle = '#0D1118'; x.fillRect(0, 0, W, H);
-  x.fillStyle = S.couleur1 || '#2A4B71'; x.fillRect(0, 0, W, 300);
-  x.fillStyle = S.couleur2 || '#E5D52B'; x.fillRect(0, 300, W, 10);
-  const lg = imgEl(S.logo); if (lg) x.drawImage(lg, 60, 60, 180, 180);
-  const on1 = onColor(S.couleur1 || '#2A4B71');
-  x.fillStyle = on1; x.textBaseline = 'alphabetic';
-  x.font = '800 64px ' + F; fitText(x, evTitle(e), lg ? 270 : 60, 140, W - (lg ? 330 : 120));
-  x.font = '600 38px ' + F; x.globalAlpha = .85; x.fillText([TYPE_LBL[e.type], fdate(e.date, true), 'à ' + e.format].join(' · '), lg ? 270 : 60, 205); x.globalAlpha = 1;
-  let y = 400;
-  const r = eventResult(e);
-  x.textAlign = 'center'; x.fillStyle = '#FFFFFF';
-  if (e.type === 'amical') { const s = score(ms[0]); x.font = '800 200px ' + F; x.fillText(s.p + ' – ' + s.c, W / 2, y + 150); y += 230; }
-  else { x.font = '800 110px ' + F; x.fillStyle = e.type === 'tournoi' ? '#FFC46B' : '#FFFFFF'; x.fillText(r.txt, W / 2, y + 90); y += 150; }
-  x.textAlign = 'left';
-  if (e.type !== 'amical') {
-    ms.forEach(m => {
-      if (y > 1000) return; const s = score(m);
-      x.fillStyle = '#161B25'; roundRect(x, 60, y, W - 120, 74, 18); x.fill();
-      x.fillStyle = '#C9CFDB'; x.font = '600 36px ' + F; fitText(x, (m.phase ? m.phase + ' · ' : '') + 'vs ' + m.adversaire, 90, y + 50, W - 360);
-      x.textAlign = 'right'; x.fillStyle = { V: '#4CD08A', N: '#C9CFDB', D: '#FF7A70' }[result(m)]; x.font = '800 46px ' + F; x.fillText(s.p + ' - ' + s.c, W - 90, y + 54); x.textAlign = 'left';
-      y += 88;
-    });
-  }
-  const tally = {};
-  ms.forEach(m => goalsOf(m.id).forEach(g => { if (g.camp === 'nous' && g.buteur) tally[g.buteur] = (tally[g.buteur] || 0) + 1; }));
-  const sc = Object.keys(tally).sort((a, b) => tally[b] - tally[a]).map(k => pname(k) + (tally[k] > 1 ? ' ×' + tally[k] : ''));
-  if (sc.length) { y += 30; x.fillStyle = S.couleur2 || '#E5D52B'; x.font = '800 40px ' + F; x.fillText('BUTEURS', 60, y); y += 56; x.fillStyle = '#FFFFFF'; x.font = '600 40px ' + F; wrap(x, sc.join(' · '), 60, y, W - 120, 52); }
-  x.fillStyle = '#6B7488'; x.font = '600 30px ' + F; x.textAlign = 'center'; x.fillText('Dans la Lucarne · ' + (S.club || ''), W / 2, H - 50);
-  return c;
+/* distinctions de fin de tournoi */
+function distinctionSheet(e) {
+  const p = player(suiviId()) || {};
+  openSheet('<h2>Tournoi terminé !</h2><p class="mu">Une distinction officielle pour ' + esc(p.nom || '') + ' ?</p><label class="row" style="font-weight:700;font-size:16px;min-height:48px"><input type="checkbox" id="dsBut"' + (String(e.distinctions || '').includes('buteur') ? ' checked' : '') + ' style="width:24px;height:24px;accent-color:var(--c2)">Meilleur buteur du tournoi</label><button type="button" class="btn" id="dsOk">Voir le compte rendu</button>');
+  $('#dsOk').onclick = () => { commit([put('Rencontres', { id: e.id, distinctions: $('#dsBut').checked ? 'buteur' : '' })]); closeSheet(); window.scrollTo(0, 0); };
 }
-function fitText(x, t, px, py, w) { const f = x.font; let s = parseInt(/(\d+)px/.exec(f)[1], 10); while (x.measureText(t).width > w && s > 20) { s -= 2; x.font = f.replace(/\d+px/, s + 'px'); } x.fillText(t, px, py); x.font = f; }
-function wrap(x, t, px, py, w, lh) { let line = ''; t.split(' ').forEach(wd => { const tt = line ? line + ' ' + wd : wd; if (x.measureText(tt).width > w) { x.fillText(line, px, py); py += lh; line = wd; } else line = tt; }); if (line) x.fillText(line, px, py); }
-function roundRect(x, a, b, w, h, r) { x.beginPath(); x.moveTo(a + r, b); x.arcTo(a + w, b, a + w, b + h, r); x.arcTo(a + w, b + h, a, b + h, r); x.arcTo(a, b + h, a, b, r); x.arcTo(a, b, a + w, b, r); x.closePath(); }
-ACT.shareEvent = async () => { const e = DB.Rencontres[cur().p.eid]; const ms = matchesOf(e.id).filter(isDone); const cv = await summaryImage(e, ms); shareCanvas(cv, 'resume-' + (e.titre || 'rencontre').replace(/\W+/g, '-').toLowerCase(), evTitle(e) + ' · ' + eventResult(e).txt); };
-ACT.shareMatch = async () => { const m = DB.Matchs[cur().p.mid], e = DB.Rencontres[m.rencontre]; const cv = await summaryImage(e, [m]); const s = score(m); shareCanvas(cv, 'match-' + String(m.adversaire).replace(/\W+/g, '-').toLowerCase(), (curSeason() || {}).club + ' ' + s.p + '-' + s.c + ' ' + m.adversaire); };
-
 /* ---------- démarrage ---------- */
 (function boot() {
   rebuildDb();

@@ -1,6 +1,6 @@
 /* Dans la Lucarne : données, synchronisation avec le Google Sheet, outils communs */
 'use strict';
-const VERSION_APP = '1.1';
+const VERSION_APP = '1.2';
 const API_URL = ((window.PFT_CONFIG || {}).apiUrl || '').trim();
 const TABLES = ['Reglages', 'Saisons', 'Joueurs', 'Rencontres', 'Matchs', 'Buts', 'Images'];
 
@@ -22,7 +22,8 @@ const truthy = v => v === true || v === 'oui' || v === 'true';
 let DB = emptyDb();
 let SERVER = LS.get('server', null);   // dernière copie reçue du serveur
 let OUTBOX = LS.get('outbox', []);
-let CODE = LS.get('code', '');
+const CFG_CODE = String((window.PFT_CONFIG || {}).code || '').trim();   // v1.2 : code d'accès écrit dans config.js (plus de saisie)
+let CODE = CFG_CODE || LS.get('code', '');
 let SYNC = { busy: false, last: LS.get('lastSync', 0), error: '', sheetUrl: LS.get('sheetUrl', '') };
 
 function emptyDb() { const d = {}; TABLES.forEach(t => d[t] = {}); return d; }
@@ -52,72 +53,114 @@ function commit(ops) {
       saveImg(op.id, op.data);
     } else OUTBOX.push(op);
   });
+  if (!SYNC.since) SYNC.since = Date.now();
   saveOutbox();
+  RETRY = 0;
   flushSoon(700);
 }
 const put = (t, row) => ({ op: 'put', t, row });
 const del = (t, id) => ({ op: 'del', t, id });
 function saveOutbox() { if (!LS.set('outbox', OUTBOX.map(o => Object.assign({}, o, { sending: undefined })))) toast('Mémoire du téléphone pleine : synchronise dès que possible.'); }
 
-async function api(fn, args) {
+/* appel au script Google, avec délai maximum (un appel qui ne répond jamais ne bloque plus la synchronisation) */
+async function api(fn, args, ms) {
   if (!API_URL) throw Object.assign(new Error('Adresse du serveur manquante (config.js).'), { noApi: true });
+  const ctl = window.AbortController ? new AbortController() : null;
+  const timer = setTimeout(() => { try { ctl && ctl.abort(); } catch (e) {} }, ms || 25000);
   let r;
   try {
-    r = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ fn, args }), redirect: 'follow' });
-  } catch (e) { throw Object.assign(new Error('Pas de réseau.'), { offline: true }); }
+    r = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ fn, args }), redirect: 'follow', signal: ctl ? ctl.signal : undefined });
+  } catch (e) {
+    clearTimeout(timer);
+    if (e && e.name === 'AbortError') throw Object.assign(new Error('Le Google Sheet met trop de temps à répondre.'), { slow: true });
+    throw Object.assign(new Error(navigator.onLine === false ? 'Pas de réseau.' : 'Connexion au Google Sheet impossible.'), { offline: true });
+  }
   let j;
-  try { j = await r.json(); } catch (e) { throw new Error('Réponse illisible du serveur.'); }
-  if (!j.ok) throw Object.assign(new Error(j.error || 'Erreur du serveur.'), { badCode: j.code === 'CODE' });
+  try { j = await r.json(); } catch (e) { clearTimeout(timer); throw Object.assign(new Error('Réponse inattendue de Google (script non déployé pour « Tout le monde » ?).'), { server: true }); }
+  clearTimeout(timer);
+  if (!j.ok) throw Object.assign(new Error(j.error || 'Erreur du serveur.'), { badCode: j.code === 'CODE', busy: j.code === 'BUSY', server: true });
   return j.result;
 }
 
-let flushTimer = 0;
+/* ---------- envoi au Google Sheet ---------- */
+let flushTimer = 0, RETRY = 0, BUSY_SINCE = 0;
+const BACKOFF = [2000, 5000, 10000, 30000];
+let REJECTED = LS.get('rejected', []);   // modifications refusées 3 fois par le Sheet (mises de côté)
+SYNC.since = OUTBOX.length ? Date.now() : 0;   // depuis quand quelque chose attend d'être envoyé
 function flushSoon(ms) { clearTimeout(flushTimer); flushTimer = setTimeout(flush, ms || 0); }
+const strip = o => Object.assign({}, o, { sending: undefined, tries: undefined, err: undefined });
 async function flush() {
+  /* sécurité : un envoi bloqué depuis plus de 40 s est abandonné */
+  if (SYNC.busy && Date.now() - BUSY_SINCE > 40000) SYNC.busy = false;
   if (SYNC.busy || !API_URL || !CODE) return;
-  SYNC.busy = true;
+  SYNC.busy = true; BUSY_SINCE = Date.now();
+  const hadFirst = !!SYNC.first;
   /* lot limité à ~3 Mo pour ne pas dépasser les limites de Google */
   const batch = []; let size = 0;
   for (const o of OUTBOX) { const s = JSON.stringify(o).length; if (batch.length && size + s > 3e6) break; batch.push(o); size += s; }
   batch.forEach(o => o.sending = true);
+  refreshStatus();
   try {
-    const res = await api('sync', [CODE, batch.map(o => Object.assign({}, o, { sending: undefined }))]);
-    OUTBOX = OUTBOX.filter(o => !batch.includes(o));
+    const res = await api('sync', [CODE, batch.map(strip)]);
+    const results = res.results || [];   // script 1.1 : pas de détail, tout est considéré comme enregistré
+    let refused = '';
+    const done = batch.filter((o, i) => {
+      o.sending = false;
+      if (!results[i]) return true;
+      o.tries = (o.tries || 0) + 1; o.err = results[i]; refused = results[i];
+      if (o.tries >= 3) { REJECTED.push({ op: strip(o), err: results[i], at: Date.now() }); return true; }
+      return false;
+    });
+    OUTBOX = OUTBOX.filter(o => !done.includes(o));
+    if (refused) LS.set('rejected', REJECTED);
     if (res.sheetUrl && res.sheetUrl !== SYNC.sheetUrl) { SYNC.sheetUrl = res.sheetUrl; LS.set('sheetUrl', res.sheetUrl); }
+    SYNC.version = res.version || '1.1';
     const str = JSON.stringify(res.tables), changed = str !== SERVER_STR;
     if (batch.length) saveOutbox();
-    SYNC.last = Date.now(); SYNC.error = '';
-    SYNC.busy = false;
+    SYNC.last = Date.now(); SYNC.error = refused ? 'Une modification a été refusée par le Google Sheet : ' + refused : ''; SYNC.kind = refused ? 'refus' : '';
+    RETRY = 0; SYNC.busy = false; SYNC.first = true;
+    if (!OUTBOX.length) SYNC.since = 0;
     if (changed) {
       /* données différentes de la copie locale : on les garde et on redessine l'écran */
       SERVER = res.tables; SERVER_STR = str; LS.set('server', SERVER); LS.set('lastSync', SYNC.last);
       const before = JSON.stringify(DB);
       rebuildDb();
-      if (OUTBOX.length) flushSoon(50); else if (JSON.stringify(DB) !== before) refresh(); else refreshStatus();
-    } else { if (OUTBOX.length) flushSoon(50); else refreshStatus(); }
+      /* premier lancement sur un téléphone : le club est déjà configuré dans le Sheet, on ouvre directement l'accueil */
+      if (typeof NAV !== 'undefined' && NAV[NAV.length - 1].s === 'setup' && !(NAV[NAV.length - 1].p || {}).edit && curSeason()) { NAV = [{ s: 'home', p: {} }]; render(); return; }
+      if (OUTBOX.length) flushSoon(refused ? 2000 : 50); else if (JSON.stringify(DB) !== before) refresh(); else refreshStatus();
+    } else { if (OUTBOX.length) flushSoon(refused ? 2000 : 50); else refreshStatus(); }
+    if (!hadFirst) setupWake();
   } catch (e) {
     batch.forEach(o => o.sending = false);
-    SYNC.busy = false;
-    SYNC.error = e.badCode ? 'Code d\'accès refusé par le serveur.' : e.message;
+    SYNC.busy = false; SYNC.first = true;
+    SYNC.kind = e.badCode ? 'code' : e.offline ? 'reseau' : e.slow ? 'lent' : e.busy ? 'occupe' : 'serveur';
+    SYNC.error = e.badCode ? 'Code d\'accès refusé par le script Google.' : e.message;
     refreshStatus();
-    if (!e.badCode) flushSoon(OUTBOX.length ? 8000 : 30000);
+    if (!hadFirst) setupWake();
+    if (!e.badCode) { flushSoon(e.busy ? 1500 : BACKOFF[Math.min(RETRY, BACKOFF.length - 1)]); RETRY++; }
   }
 }
 let SERVER_STR = SERVER ? JSON.stringify(SERVER) : '';
+function setupWake() { if (typeof NAV !== 'undefined' && NAV[NAV.length - 1].s === 'setup') refresh(); }
 /* met à jour seulement l'indicateur de synchronisation (sans redessiner l'écran) */
 function refreshStatus() {
   const el = document.getElementById('syncDot');
   if (el) { el.className = 'syncdot ' + syncState(); el.title = syncText(); }
   const t = document.getElementById('syncTxt'); if (t) t.textContent = syncText();
-  const nb = document.getElementById('netbar'); if (nb) nb.outerHTML = netBanner(); else if (netBanner()) render();
+  const nb = document.getElementById('netbar'); if (nb) nb.outerHTML = netBanner();
 }
-function syncState() { return !API_URL ? 'off' : SYNC.error ? 'err' : (OUTBOX.length || SYNC.busy) ? 'busy' : 'ok'; }
+/* le bandeau n'apparaît que si quelque chose attend depuis plus de 20 secondes (ou si un envoi a été refusé) */
+const showBanner = () => !!API_URL && ((OUTBOX.length && SYNC.since && Date.now() - SYNC.since > 20000) || REJECTED.length > 0 || SYNC.kind === 'code');
+function syncState() { return !API_URL ? 'off' : (SYNC.kind === 'code' || REJECTED.length) ? 'err' : (OUTBOX.length || SYNC.busy) ? (showBanner() ? 'err' : 'busy') : 'ok'; }
 function syncText() {
   if (!API_URL) return 'Non relié au Google Sheet (config.js)';
-  if (SYNC.error) return OUTBOX.length + ' modification(s) en attente · ' + SYNC.error + ' · nouvel essai automatique';
+  if (SYNC.kind === 'code') return SYNC.error;
+  if (OUTBOX.length && showBanner()) return OUTBOX.length + ' modification(s) pas encore enregistrée(s) · ' + (SYNC.error || 'envoi en cours') + ' · nouvel essai automatique';
   if (OUTBOX.length || SYNC.busy) return 'Enregistrement en cours…';
+  if (REJECTED.length) return REJECTED.length + ' modification(s) refusée(s) par le Google Sheet (voir Réglages)';
   return 'À jour' + (SYNC.last ? ' · ' + new Date(SYNC.last).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '');
 }
+setInterval(() => { if (OUTBOX.length || SYNC.busy) refreshStatus(); }, 5000);
 /* synchronisation automatique : régulièrement quand l'appli est ouverte, et envoi de secours à la fermeture */
 setInterval(() => { if (document.visibilityState === 'visible' && API_URL && CODE && !SYNC.busy) flush(); }, 40000);
 document.addEventListener('visibilitychange', () => {
@@ -156,7 +199,7 @@ function imgEl(id) {
   const d = imgData(id); if (!d) return null;
   const k = id + ':' + d.length;
   let e = IMG.el[k];
-  if (!e) { e = IMG.el[k] = new Image(); e.onload = () => paintCards(); e.src = d; }
+  if (!e) { e = IMG.el[k] = new Image(); e.onload = () => { paintCards(); if (typeof paintRecaps === 'function') paintRecaps(); }; e.src = d; }
   return e.complete && e.naturalWidth ? e : null;
 }
 function loadImage(src) { return new Promise((ok, ko) => { const i = new Image(); i.onload = () => ok(i); i.onerror = ko; i.src = src; }); }

@@ -31,6 +31,7 @@ function render() {
   $('#view').innerHTML = (r.neutral ? '' : netBanner()) + r.html;
   $$('#tabs [data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === r.tab));
   paintCards();
+  if (typeof paintRecaps === 'function') paintRecaps();
   if (r.after) r.after();
 }
 function netBanner() {
@@ -238,6 +239,7 @@ SCREENS.event = p => {
   done.forEach(m => { const s = score(m); o[result(m).toLowerCase()]++; o.bp += s.p; o.bc += s.c; });
   let h = topBar(evTitle(e), [fdate(e.date, true), 'à ' + (e.format || 8), LIEU_LBL[e.lieu]].filter(Boolean).join(' · '), { back: true, right: typeBadge(e.type) });
   h += '<div class="main">';
+  if (!live && done.length) h += recapPreview(e.id);
   if (e.type === 'tournoi') {
     const r = eventResult(e);
     h += '<div class="card" style="flex-direction:row;align-items:center;gap:12px"><span style="color:#FFC46B;width:30px;height:30px;flex:none">' + ICON.trophy.replace('class="ic"', 'class="ic" style="width:30px;height:30px"') + '</span><span class="cd" style="font-size:26px;color:#FFC46B">' + esc(live && !done.length ? 'À jouer' : r.txt) + '</span></div>';
@@ -266,7 +268,8 @@ SCREENS.event = p => {
       ks.map(k => '<div class="tr"' + (k === pid ? ' style="background:var(--s2);border-radius:10px;margin:0 -8px;padding:0 8px"' : '') + '><span style="flex:1;font-weight:' + (k === pid ? 800 : 500) + (k === pid ? ';color:var(--c2)' : '') + '">' + esc(pname(k)) + '</span><span class="c">' + tally[k].b + '</span><span class="c">' + tally[k].pd + '</span></div>').join('') + '</div></div>';
   }
   if (live) h += '<button type="button" class="btn" data-a="finishEvent">Terminer le ' + TYPE_LBL[e.type].toLowerCase() + '</button>';
-  else h += '<button type="button" class="btn" data-a="shareEvent">' + ICON.share + 'Partager le résumé (image)</button>';
+  else if (e.type === 'tournoi') h += '<button type="button" class="btn2" data-a="distinctions">' + ICON.trophy + 'Distinctions (meilleur buteur du tournoi)</button>';
+  if (live && done.length) h += '<p class="lbl">Compte rendu provisoire</p>' + recapPreview(e.id);
   h += '<div class="row"><button type="button" class="btn2" data-a="editEvent">' + ICON.edit + 'Modifier</button>' + (live ? '' : '<button type="button" class="btn2" data-a="reopenEvent">Rouvrir</button>') + '<button type="button" class="btn2 danger" data-a="deleteEvent">' + ICON.trash + 'Supprimer</button></div>';
   h += '</div>';
   return { html: h };
@@ -292,6 +295,7 @@ ACT.addMatch = () => {
   };
 };
 ACT.sheetClose = () => closeSheet();
+ACT.distinctions = () => distinctionSheet(DB.Rencontres[cur().p.eid]);
 ACT.finishEvent = async () => {
   const e = DB.Rencontres[cur().p.eid];
   const open = matchesOf(e.id).filter(m => !isDone(m));
@@ -300,6 +304,7 @@ ACT.finishEvent = async () => {
   open.filter(m => !goalsOf(m.id).length).forEach(m => ops.push(del('Matchs', m.id)));
   open.filter(m => goalsOf(m.id).length).forEach(m => ops.push(put('Matchs', finishFields(m))));
   commit(ops); render();
+  if (e.type === 'tournoi') distinctionSheet(DB.Rencontres[e.id]);
 };
 ACT.reopenEvent = () => { commit([put('Rencontres', { id: cur().p.eid, statut: 'en_cours' })]); render(); };
 ACT.deleteEvent = async () => {
@@ -665,7 +670,8 @@ SCREENS.match = p => {
     const bench = (c.joueurs || []).filter(x => !placed.has(x));
     h += '<p class="mu">Remplaçants : ' + (bench.length ? esc(bench.map(pname).join(', ')) : 'aucun') + '</p>';
   }
-  h += '<div class="row"><button type="button" class="btn2" data-a="go" data-s="live" data-p=\'{"mid":"' + m.id + '"}\'>' + ICON.edit + 'Corriger</button>' + (e.type === 'amical' ? '<button type="button" class="btn2" data-a="shareMatch">' + ICON.share + 'Partager</button>' : '') + '<button type="button" class="btn2 danger" data-a="delMatch" style="flex:none;width:auto">' + ICON.trash + '</button></div>';
+  if (isDone(m)) h += '<p class="lbl">Compte rendu</p>' + recapPreview(e.id, e.type === 'amical' ? '' : m.id);
+  h += '<div class="row"><button type="button" class="btn2" data-a="go" data-s="live" data-p=\'{"mid":"' + m.id + '"}\'>' + ICON.edit + 'Corriger</button><button type="button" class="btn2 danger" data-a="delMatch" style="flex:none;width:auto">' + ICON.trash + '</button></div>';
   h += '</div>';
   return { html: h };
 };
