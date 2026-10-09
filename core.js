@@ -1,6 +1,6 @@
 /* Dans la Lucarne : données, synchronisation avec le Google Sheet, outils communs */
 'use strict';
-const VERSION_APP = '1.2';
+const VERSION_APP = '1.3';
 const API_URL = ((window.PFT_CONFIG || {}).apiUrl || '').trim();
 const TABLES = ['Reglages', 'Saisons', 'Joueurs', 'Rencontres', 'Matchs', 'Buts', 'Images'];
 
@@ -22,6 +22,11 @@ const truthy = v => v === true || v === 'oui' || v === 'true';
 let DB = emptyDb();
 let SERVER = LS.get('server', null);   // dernière copie reçue du serveur
 let OUTBOX = LS.get('outbox', []);
+/* v1.3 : suppressions faites sur ce téléphone (« Onglet:id » → date). Une ligne supprimée ne réapparaît plus
+   à la réouverture, même si la copie gardée du Sheet est ancienne ou si un vieil envoi la contient encore. */
+let GONE = LS.get('deleted', {});
+(() => { const lim = Date.now() - 30 * 864e5; let n = 0; for (const k in GONE) if (GONE[k] < lim) { delete GONE[k]; n++; } if (n) LS.set('deleted', GONE); })();
+const gone = (t, id) => !!GONE[t + ':' + id];
 const CFG_CODE = String((window.PFT_CONFIG || {}).code || '').trim();   // v1.2 : code d'accès écrit dans config.js (plus de saisie)
 let CODE = CFG_CODE || LS.get('code', '');
 let SYNC = { busy: false, last: LS.get('lastSync', 0), error: '', sheetUrl: LS.get('sheetUrl', '') };
@@ -31,12 +36,12 @@ let DBV = 0; // version des données (pour les index et les calculs mémorisés)
 function rebuildDb() {
   DBV++;
   DB = emptyDb();
-  if (SERVER) TABLES.forEach(t => (SERVER[t] || []).forEach(r => { DB[t][r.id] = r; }));
+  if (SERVER) TABLES.forEach(t => (SERVER[t] || []).forEach(r => { if (!gone(t, r.id)) DB[t][r.id] = r; }));
   OUTBOX.forEach(op => applyOp(op));
 }
 function applyOp(op) {
   DBV++;
-  if (op.op === 'put') { const cur = DB[op.t][op.row.id] || {}; DB[op.t][op.row.id] = Object.assign({}, cur, op.row); }
+  if (op.op === 'put') { if (op.t !== 'Reglages' && gone(op.t, op.row.id)) return; const cur = DB[op.t][op.row.id] || {}; DB[op.t][op.row.id] = Object.assign({}, cur, op.row); }
   else if (op.op === 'del') delete DB[op.t][op.id];
   else if (op.op === 'img') { DB.Images[op.id] = { id: op.id, type: op.type || '' }; IMG.mem[op.id] = op.data; }
 }
@@ -51,8 +56,12 @@ function commit(ops) {
     } else if (op.op === 'img') {
       OUTBOX.push({ op: 'img', id: op.id, data: op.data, type: op.type });
       saveImg(op.id, op.data);
-    } else OUTBOX.push(op);
+    } else {
+      if (op.op === 'del' && op.t !== 'Reglages') { GONE[op.t + ':' + op.id] = Date.now(); OUTBOX = OUTBOX.filter(o => o.sending || !(o.op === 'put' && o.t === op.t && o.row.id === op.id)); }
+      OUTBOX.push(op);
+    }
   });
+  if (ops.some(o => o.op === 'del')) LS.set('deleted', GONE);
   if (!SYNC.since) SYNC.since = Date.now();
   saveOutbox();
   RETRY = 0;
@@ -375,6 +384,11 @@ function confirmBox(title, text, okLbl, danger) {
 }
 
 /* icônes (traits) */
+/* v1.3 : icônes ballon / chaussure reprises telles quelles de FUT 5V5, avec « ×N » quand il y en a plusieurs */
+const IC_BALL = '<svg class="icx" viewBox="0 0 40 40" aria-hidden="true"><defs><clipPath id="icBallClip"><circle cx="20" cy="20" r="16.92"/></clipPath></defs><circle cx="20" cy="20" r="18" fill="#fff" stroke="#1ed760" stroke-width="2.3"/><g clip-path="url(#icBallClip)" fill="#1ed760"><polygon points="20.00,13.52 26.16,18.00 23.81,25.24 16.19,25.24 13.84,18.00"/><polygon points="20.00,-3.04 25.14,0.69 23.17,6.73 16.83,6.73 14.86,0.69"/><polygon points="36.78,9.15 41.91,12.88 39.95,18.92 33.60,18.92 31.64,12.88"/><polygon points="30.37,28.87 35.50,32.60 33.54,38.64 27.19,38.64 25.23,32.60"/><polygon points="9.63,28.87 14.77,32.60 12.81,38.64 6.46,38.64 4.50,32.60"/><polygon points="3.22,9.15 8.36,12.88 6.40,18.92 0.05,18.92 -1.91,12.88"/></g></svg>';
+const IC_BOOT = '<svg class="icx" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8.6" fill="#fff" stroke="rgba(0,0,0,.3)" stroke-width="1"/><g transform="translate(10 9.6) rotate(31) scale(.5)" fill="#1f8bff"><path d="M-11,-8L-5.5,-9.5Q-3.5,-4 2.5,-3.2Q10,-2.6 12.6,1.2Q13.6,4.2 10.8,4.6L-10,4.6Q-13.2,4 -12.6,-.5Z"/><rect x="-11" y="4.6" width="22.5" height="2"/><path d="M-9.2,6.5h2.6l-1.3,3.1zM-4.6,6.5h2.4l-1.2,3.1zM2.2,6.5h2.4l-1.2,3.1zM7.4,6.5h2.4l-1.2,3.1z"/></g></svg>';
+const icn = (svg, n) => n > 0 ? '<span class="icn">' + svg + (n > 1 ? '×' + n : '') + '</span>' : '';
+const icBP = (b, pd) => icn(IC_BALL, b) + icn(IC_BOOT, pd);
 const ICON = {
   back: '<svg viewBox="0 0 24 24" class="ic"><path d="M15 5l-7 7 7 7"/></svg>',
   plus: '<svg viewBox="0 0 24 24" class="ic"><path d="M12 5v14M5 12h14"/></svg>',

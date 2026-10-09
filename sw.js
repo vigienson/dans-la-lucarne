@@ -1,6 +1,6 @@
 /* Dans la Lucarne : service worker (installation, ouverture sans réseau, mises à jour)
    Changer VERSION à chaque mise en ligne pour que les téléphones prennent la nouvelle version. */
-const VERSION = 'lucarne-2026-10-06-v1.2';
+const VERSION = 'lucarne-2026-10-09-v1.3';
 const SHELL = ['./', './index.html', './config.js', './cards.js', './core.js', './screens.js', './recap.js', './people.js', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png', './icons/favicon-32.png',
   './fonts/barlow-400.woff2', './fonts/barlow-500.woff2', './fonts/barlow-600.woff2', './fonts/barlow-700.woff2', './fonts/barlow-condensed-600.woff2', './fonts/barlow-condensed-700.woff2', './fonts/barlow-condensed-800.woff2', './fonts/barlow-condensed-900.woff2', './fonts/barlow-semi-condensed-600.woff2', './fonts/barlow-semi-condensed-700.woff2', './fonts/barlow-semi-condensed-800.woff2'];

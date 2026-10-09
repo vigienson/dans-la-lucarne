@@ -37,6 +37,7 @@ function render() {
 function netBanner() {
   if (!API_URL) return '<div class="netbar" id="netbar">Mode local : l\'adresse du serveur n\'est pas renseignée dans config.js.</div>';
   if (SYNC.error && OUTBOX.length) return '<div class="netbar" id="netbar">' + OUTBOX.length + ' modification(s) en attente · envoi automatique dès que le réseau revient</div>';
+  if (!SYNC.first && SERVER && CODE) return '<div class="netbar upd" id="netbar"><span class="spin"></span>Actualisation…</div>';   // v1.3 : à l'ouverture, jusqu'à la première relecture du Sheet
   return '<div id="netbar" hidden></div>';
 }
 document.addEventListener('click', e => {
@@ -92,7 +93,7 @@ function evItem(e) {
     r.big ? '<span class="cd ' + r.cls + '" style="font-size:20px">' + r.txt + '</span>' :
       r.v ? '<span class="cd" style="font-size:17px">' + vnd(r.v.V, r.v.N, r.v.D) + '</span>' :
         '<span style="font-weight:700;font-size:14px;color:#FFC46B">' + esc(r.txt) + '</span>';
-  const pls = pl.b || pl.pd ? esc(pname(pid)) + ' : ' + bpLine(pl.b, pl.pd) : '';
+  const pls = pl.b || pl.pd ? '<span class="sci">' + esc(pname(pid)) + icBP(pl.b, pl.pd) + '</span>' : '';   // v1.3 : icônes ballon / chaussure
   return '<button type="button" class="it' + (live ? ' live' : '') + '" data-a="openEvent" data-id="' + e.id + '">' + typeIcon(e.type) +
     '<div class="grow"><div class="t1">' + esc(evTitle(e)) + '</div><p class="mu">' + esc(sub) + '</p></div><div class="res">' + right + (pls ? '<span class="mu">' + pls + '</span>' : '') + '</div></button>';
 }
@@ -252,11 +253,13 @@ SCREENS.event = p => {
   ms.forEach((m, i) => {
     if (e.type === 'tournoi' && m.phase !== ph) { ph = m.phase; h += '<p class="ph-sep">' + esc(m.phase || 'Match') + '</p>'; }
     const s = score(m), sc = goalsOf(m.id).filter(g => g.camp === 'nous' && g.buteur && g.special !== 'inconnu');
-    const cnt = {}; sc.forEach(g => cnt[g.buteur] = (cnt[g.buteur] || 0) + 1);
-    const scorers = Object.keys(cnt).map(k => pname(k) + (cnt[k] > 1 ? ' ×' + cnt[k] : '')).join(' · ');
+    /* v1.3 : qui a marqué / fait une passe D, avec les icônes ballon et chaussure */
+    const cnt = {}, add = (k, f) => { (cnt[k] = cnt[k] || { b: 0, pd: 0 })[f]++; };
+    sc.forEach(g => add(g.buteur, 'b')); goalsOf(m.id).forEach(g => { if (g.camp === 'nous' && g.passeur) add(g.passeur, 'pd'); });
+    const scorers = Object.keys(cnt).filter(k => player(k)).sort((a, b) => cnt[b].b - cnt[a].b || cnt[b].pd - cnt[a].pd).map(k => '<span class="sci">' + esc(pname(k)) + icBP(cnt[k].b, cnt[k].pd) + '</span>').join('');
     const st = m.statut === 'en_cours' ? '<span class="mu" style="display:flex;align-items:center;gap:6px"><span class="dot"></span>En cours</span>' : m.statut === 'prevu' ? '<span class="mu">À jouer</span>' : '';
     const tab = m.tab && m.tab.nous != null ? ' <small class="mu">(' + m.tab.nous + '-' + m.tab.eux + ' tab)</small>' : '';
-    h += '<button type="button" class="it' + (m.statut === 'en_cours' ? ' live' : '') + '" data-a="openMatch" data-id="' + m.id + '"><span class="bi" style="background:var(--s2);font-family:var(--cd);font-weight:800;color:var(--mu);width:32px;height:32px">' + (i + 1) + '</span><div class="grow"><div class="t1">vs ' + esc(m.adversaire) + '</div>' + (st || '<p class="mu">' + esc(scorers || '—') + '</p>') + '</div><span class="cd ' + (isDone(m) ? RCLS[result(m)] : '') + '" style="font-size:22px">' + s.p + '-' + s.c + tab + '</span></button>';
+    h += '<button type="button" class="it' + (m.statut === 'en_cours' ? ' live' : '') + '" data-a="openMatch" data-id="' + m.id + '"><span class="bi" style="background:var(--s2);font-family:var(--cd);font-weight:800;color:var(--mu);width:32px;height:32px">' + (i + 1) + '</span><div class="grow"><div class="t1">vs ' + esc(m.adversaire) + '</div>' + (st || '<p class="mu scl">' + (scorers || '—') + '</p>') + '</div><span class="cd ' + (isDone(m) ? RCLS[result(m)] : '') + '" style="font-size:22px">' + s.p + '-' + s.c + tab + '</span></button>';
   });
   if (live) h += '<button type="button" class="btn2 dash" data-a="addMatch">' + ICON.plus + 'Ajouter un match</button>';
   /* buteurs et passeurs */
@@ -264,7 +267,7 @@ SCREENS.event = p => {
   ms.forEach(m => goalsOf(m.id).forEach(g => { if (g.camp !== 'nous') return; if (g.buteur) (tally[g.buteur] = tally[g.buteur] || { b: 0, pd: 0 }).b++; if (g.passeur) (tally[g.passeur] = tally[g.passeur] || { b: 0, pd: 0 }).pd++; }));
   const ks = Object.keys(tally).filter(k => player(k)).sort((a, b) => tally[b].b - tally[a].b || tally[b].pd - tally[a].pd);
   if (ks.length) {
-    h += '<div class="card" style="gap:0"><div class="tbl"><div class="tr th"><span style="flex:1">Buteurs et passeurs</span><span class="c">Buts</span><span class="c">Passes</span></div>' +
+    h += '<div class="card" style="gap:0"><div class="tbl"><div class="tr th"><span style="flex:1">Buteurs et passeurs</span><span class="c" title="Buts">' + IC_BALL + '</span><span class="c" title="Passes D">' + IC_BOOT + '</span></div>' +
       ks.map(k => '<div class="tr"' + (k === pid ? ' style="background:var(--s2);border-radius:10px;margin:0 -8px;padding:0 8px"' : '') + '><span style="flex:1;font-weight:' + (k === pid ? 800 : 500) + (k === pid ? ';color:var(--c2)' : '') + '">' + esc(pname(k)) + '</span><span class="c">' + tally[k].b + '</span><span class="c">' + tally[k].pd + '</span></div>').join('') + '</div></div>';
   }
   if (live) h += '<button type="button" class="btn" data-a="finishEvent">Terminer le ' + TYPE_LBL[e.type].toLowerCase() + '</button>';
@@ -507,7 +510,7 @@ SCREENS.live = p => {
   let a = 0, b = 0; const lines = gs.map(g => { g.camp === 'eux' ? b++ : a++; return { g, sc: a + '-' + b }; }).reverse();
   lines.forEach(x => {
     const g = x.g;
-    const t = g.camp === 'eux' ? '<span style="font-weight:700;color:#FF8A80">But ' + esc(m.adversaire) + '</span>' : '<span style="font-weight:700">But ' + esc(S.abrev || '') + ' · ' + esc(goalWho(g)) + '</span><p class="mu">' + esc(g.passeur ? 'passe décisive de ' + pname(g.passeur) : g.special === 'csc' ? 'contre son camp' : 'sans passe') + '</p>';
+    const t = g.camp === 'eux' ? '<span style="font-weight:700;color:#FF8A80">' + IC_BALL + ' But ' + esc(m.adversaire) + '</span>' : '<span style="font-weight:700">' + IC_BALL + ' But ' + esc(S.abrev || '') + ' · ' + esc(goalWho(g)) + '</span><p class="mu">' + (g.passeur ? IC_BOOT + ' passe décisive de ' + esc(pname(g.passeur)) : g.special === 'csc' ? 'contre son camp' : 'sans passe') + '</p>';
     h += '<button type="button" class="ev" data-a="lEdit" data-id="' + g.id + '"><span class="min">' + num(g.minute) + '\'</span><div style="flex:1">' + t + '</div><span class="cd">' + x.sc + '</span></button>';
   });
   h += '<div class="ev" style="cursor:default"><span class="min">0\'</span><span class="mu">Coup d\'envoi</span></div></div>';
@@ -648,9 +651,9 @@ SCREENS.match = p => {
   const e = DB.Rencontres[m.rencontre] || {}, S = curSeason() || {}, gs = goalsOf(m.id), s = score(m), t = p.t || 'tl';
   let h = topBar(e.type === 'amical' ? 'Match amical' : (e.titre || ''), [fdate(e.date, true), m.phase, 'à ' + m.format, LIEU_LBL[e.lieu]].filter(Boolean).join(' · '), { back: true, right: typeBadge(e.type) });
   h += '<div class="main"><div class="card" style="padding:16px">' + scoreBlock(m);
-  const us = gs.filter(g => g.camp === 'nous').map(g => goalWho(g).split(' ')[0] + ' ' + num(g.minute) + '\'').join(' · ');
-  const them = gs.filter(g => g.camp === 'eux').map(g => num(g.minute) + '\'').join(' · ');
-  h += '<div class="row" style="font-size:13px;color:var(--tx2);align-items:flex-start"><div style="flex:1;text-align:right">' + esc(us) + '</div><div style="width:1px;align-self:stretch;background:var(--line)"></div><div style="flex:1">' + esc(them) + '</div></div>';
+  const us = gs.filter(g => g.camp === 'nous').map(g => '<span class="sci">' + IC_BALL + '&nbsp;' + esc(goalWho(g).split(' ')[0]) + ' ' + num(g.minute) + '\'</span>').join(' ');
+  const them = gs.filter(g => g.camp === 'eux').map(g => '<span class="sci">' + IC_BALL + '&nbsp;' + num(g.minute) + '\'</span>').join(' ');
+  h += '<div class="row msum" style="font-size:13px;color:var(--tx2);align-items:flex-start"><div style="flex:1;text-align:right">' + us + '</div><div style="width:1px;align-self:stretch;background:var(--line)"></div><div style="flex:1">' + them + '</div></div>';
   const r = result(m), tabTxt = m.tab && m.tab.nous != null ? ' · tirs au but ' + m.tab.nous + '-' + m.tab.eux : '';
   h += '<p style="margin:4px 0 0;text-align:center;font-weight:700" class="' + RCLS[isKO(phaseBase(m.phase)) && s.p === s.c && m.tab ? (wonKO(m) ? 'V' : 'D') : r] + '">' + (isDone(m) ? { V: 'Victoire', N: 'Match nul', D: 'Défaite' }[r] : 'En cours') + esc(tabTxt) + '</p></div>';
   h += '<div class="seg" role="tablist"><button type="button" class="' + (t === 'tl' ? 'on' : '') + '" data-a="mTab" data-t="tl">Déroulé</button><button type="button" class="' + (t === 'compo' ? 'on' : '') + '" data-a="mTab" data-t="compo">Composition</button></div>';
@@ -660,8 +663,8 @@ SCREENS.match = p => {
     gs.forEach(g => {
       g.camp === 'eux' ? b++ : a++;
       const sc = '<div class="cd" style="font-size:18px">' + a + '-' + b + '</div>';
-      if (g.camp === 'nous') h += '<div class="tle"><div class="l"><div class="who"' + (g.buteur === suiviId() ? ' style="color:var(--c2)"' : '') + '>' + esc(goalWho(g)) + '</div><p class="mu">' + esc(g.passeur ? 'passe de ' + pname(g.passeur) : g.special ? '' : 'sans passe') + '</p></div><span class="mn us">' + num(g.minute) + '\'</span><div class="r">' + sc + '</div></div>';
-      else h += '<div class="tle"><div class="l">' + sc + '</div><span class="mn">' + num(g.minute) + '\'</span><div class="r"><div class="who" style="color:var(--tx2)">But ' + esc(advAbbr(m.adversaire)) + '</div></div></div>';
+      if (g.camp === 'nous') h += '<div class="tle"><div class="l"><div class="who"' + (g.buteur === suiviId() ? ' style="color:var(--c2)"' : '') + '>' + IC_BALL + ' ' + esc(goalWho(g)) + '</div><p class="mu">' + (g.passeur ? IC_BOOT + ' ' + esc(pname(g.passeur)) : g.special ? '' : 'sans passe') + '</p></div><span class="mn us">' + num(g.minute) + '\'</span><div class="r">' + sc + '</div></div>';
+      else h += '<div class="tle"><div class="l">' + sc + '</div><span class="mn">' + num(g.minute) + '\'</span><div class="r"><div class="who" style="color:var(--tx2)">' + IC_BALL + ' But ' + esc(advAbbr(m.adversaire)) + '</div></div></div>';
     });
     h += '<div class="tle"><span class="mid">' + (isDone(m) ? 'Fin du match · ' + s.p + '-' + s.c : 'Match en cours') + '</span></div></div>';
   } else {

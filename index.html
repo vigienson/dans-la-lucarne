@@ -183,7 +183,7 @@ canvas.card-cv{display:block}
 .season .sh{display:flex;align-items:center;gap:10px;padding:10px 14px}
 .season .sh img{width:40px;height:40px;object-fit:contain;flex:none}
 .season .sb{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;padding:12px 14px 6px}
-.season .sb div{display:flex;flex-direction:column;align-items:center}
+.season .sb div{display:flex;flex-direction:column;align-items:center;justify-content:center}
 .season .sb b{font-family:var(--cd);font-weight:800;font-size:20px}
 .season .sb div>span{font-size:12px;color:var(--mu);text-align:center}
 .season .tr{display:flex;align-items:center;gap:8px;padding:6px 14px 12px;font-size:13px;font-weight:600;color:#FFC46B}
@@ -208,6 +208,14 @@ input[type=color]{width:52px;height:44px;border:1px solid var(--line);border-rad
 #toast{position:fixed;left:50%;bottom:calc(92px + var(--safe-b));transform:translateX(-50%);background:#F2F4F8;color:#0D1118;border-radius:12px;padding:10px 16px;font-weight:600;z-index:40;max-width:90vw;text-align:center;box-shadow:0 8px 24px rgba(0,0,0,.4)}
 #toast[hidden]{display:none}
 .netbar{background:#3A2A12;color:#FFC46B;font-size:13px;font-weight:600;padding:8px 18px;text-align:center}
+.icn{display:inline-flex;align-items:center;gap:1px;font-weight:700;white-space:nowrap;vertical-align:middle;margin-left:4px}
+.icn .icx{width:1.15em;height:1.15em;flex:none}
+.icx{display:inline-block;vertical-align:middle}
+.scl{display:flex;flex-wrap:wrap;gap:2px 12px;align-items:center}.sci{display:inline-flex;align-items:center;white-space:nowrap}
+.tr.th .c .icx{width:18px;height:18px}
+.tl .who .icx,.tl .mu .icx,.ev .icx{width:15px;height:15px;margin-top:-2px}.msum .icx{width:13px;height:13px}.msum .sci{margin:0 0 2px 6px}
+.netbar.upd{background:transparent;color:var(--mu);font-weight:500;font-size:12px;padding:4px 18px;display:flex;align-items:center;justify-content:center;gap:8px}
+.netbar.upd .spin{width:11px;height:11px;border-width:2px;margin:0}
 .photo-ed canvas{touch-action:none;align-self:center}
 .range{width:100%;accent-color:var(--c2)}
 .share-hidden{position:fixed;left:-9999px;top:0}

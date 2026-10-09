@@ -72,6 +72,48 @@
     x.fillStyle = ink || '#0D1118'; x.beginPath(); for (let i = 0; i < 5; i++) { const a = -Math.PI / 2 + i * 2 * Math.PI / 5; x.lineTo(cx + Math.cos(a) * r * .38, cy + Math.sin(a) * r * .38); } x.closePath(); x.fill();
     x.restore();
   }
+  /* v1.3 : ballon et chaussure dessinés exactement comme dans FUT 5V5 */
+  function drawBall(c, x, y, r) {
+    const dark = '#1ed760';
+    const pent = (cx, cy, R0) => { c.beginPath(); for (let i = 0; i < 5; i++) { const a = -Math.PI / 2 + i * 2 * Math.PI / 5; i ? c.lineTo(cx + Math.cos(a) * R0, cy + Math.sin(a) * R0) : c.moveTo(cx + Math.cos(a) * R0, cy + Math.sin(a) * R0); } c.closePath(); c.fill(); };
+    c.save();
+    c.shadowColor = 'rgba(0,0,0,.35)'; c.shadowBlur = r * .4; c.shadowOffsetY = r * .12;
+    c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fillStyle = '#ffffff'; c.fill();
+    c.shadowColor = 'transparent'; c.lineWidth = r * .13; c.strokeStyle = dark; c.stroke();
+    c.beginPath(); c.arc(x, y, r * .94, 0, Math.PI * 2); c.clip();
+    c.fillStyle = dark; pent(x, y, r * .36);
+    for (let k = 0; k < 5; k++) { const a = -Math.PI / 2 + k * 2 * Math.PI / 5; pent(x + Math.cos(a) * r * .98, y + Math.sin(a) * r * .98, r * .3); }
+    c.restore();
+  }
+  function drawBoot(c, x, y, r) {
+    c.save();
+    c.shadowColor = 'rgba(0,0,0,.35)'; c.shadowBlur = r * .4; c.shadowOffsetY = r * .12;
+    c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fillStyle = '#ffffff'; c.fill();
+    c.shadowColor = 'transparent'; c.lineWidth = r * .08; c.strokeStyle = 'rgba(0,0,0,.25)'; c.stroke();
+    const k = r / 16.5; c.translate(x, y); c.rotate(.55); c.scale(k, k); c.translate(0, -1);
+    c.fillStyle = '#1f8bff'; c.beginPath();
+    c.moveTo(-11, -8); c.lineTo(-5.5, -9.5);
+    c.quadraticCurveTo(-3.5, -4, 2.5, -3.2); c.quadraticCurveTo(10, -2.6, 12.6, 1.2); c.quadraticCurveTo(13.6, 4.2, 10.8, 4.6);
+    c.lineTo(-10, 4.6); c.quadraticCurveTo(-13.2, 4, -12.6, -.5);
+    c.closePath(); c.fill();
+    c.fillRect(-11, 4.6, 22.5, 2);
+    [[-9.2, 2.6], [-4.6, 2.4], [2.2, 2.4], [7.4, 2.4]].forEach(([sx, w]) => { c.beginPath(); c.moveTo(sx, 6.5); c.lineTo(sx + w, 6.5); c.lineTo(sx + w * .5, 9.6); c.closePath(); c.fill(); });
+    c.strokeStyle = '#ffffff'; c.lineWidth = 1.1; c.lineCap = 'round';
+    [[-3.6, -6.2], [-.9, -4.6], [1.9, -3.6]].forEach(([a, b]) => { c.beginPath(); c.moveTo(a - 1.3, b - 1.5); c.lineTo(a + 1.3, b + 1.5); c.stroke(); });
+    c.beginPath(); c.moveTo(-11.5, -1.2); c.quadraticCurveTo(-4, -.4, 4, .4); c.lineWidth = .9; c.strokeStyle = 'rgba(255,255,255,.55)'; c.stroke();
+    c.restore();
+  }
+  /* icônes + « ×N » (à partir de 2) alignées à gauche à partir de px ; renvoie la position x atteinte */
+  function iconCount(x, px, cy, r, b, pd, col) {
+    x.save(); x.textAlign = 'left'; x.textBaseline = 'middle'; x.font = '800 ' + Math.round(r * 1.5) + 'px ' + FS; x.fillStyle = col || '#FFFFFF';
+    [[b, drawBall], [pd, drawBoot]].forEach(([n, f]) => {
+      if (!n) return;
+      f(x, px + r, cy, r); px += r * 2 + 4;
+      if (n > 1) { const t = '×' + n; x.fillText(t, px, cy + r * .06); px += x.measureText(t).width; }
+      px += r * .9;
+    });
+    x.restore(); return px;
+  }
   function vsBadge(x, cx, cy, r) {
     x.save(); x.beginPath(); x.arc(cx, cy, r, 0, 7); x.fillStyle = '#2A3242'; x.fill(); x.lineWidth = r * .08; x.strokeStyle = 'rgba(255,255,255,.8)'; x.stroke();
     x.fillStyle = '#FFFFFF'; x.font = '900 ' + Math.round(r * .8) + 'px ' + F9; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('VS', cx, cy + r * .05); x.restore();
@@ -123,12 +165,11 @@
     x.fillStyle = 'rgba(255,255,255,.65)'; x.font = '800 26px ' + FS; x.textAlign = 'left'; x.fillText(title || 'LES BUTS', 90, y); y += 22;
     gs.slice(0, maxRows).forEach(g => {
       y += 56;
-      ballIcon(x, 108, y - 12, 17, '#0D1118');
+      drawBall(x, 108, y - 13, 19);
       x.fillStyle = g.me ? R.club.c2 : '#FFFFFF'; x.font = '800 38px ' + FS; x.textAlign = 'left';
       x.fillText(g.who, 140, y);
       const w = x.measureText(g.who).width;
-      x.fillStyle = 'rgba(255,255,255,.6)'; x.font = '600 30px ' + FS;
-      if (g.pass) x.fillText('  passe de ' + g.pass, 140 + w, y);
+      if (g.pass) { drawBoot(x, 140 + w + 38, y - 12, 16); x.fillStyle = 'rgba(255,255,255,.7)'; x.font = '600 30px ' + FS; x.fillText(g.pass, 140 + w + 62, y); }
       x.textAlign = 'right'; x.fillStyle = 'rgba(255,255,255,.85)'; x.font = '800 36px ' + F9; x.fillText(g.min + '\'', W - 90, y);
     });
     return y;
@@ -147,7 +188,10 @@
     if (ribbon) pill(x, ribbon, px, py, ribbonBg || goldFill(x, py, py + 40), ribbonFg || '#2A1C00', 30);
     x.fillStyle = '#FFFFFF'; x.textAlign = 'left'; x.font = '900 92px ' + F9; x.fillText(me.name.toUpperCase(), px, py + 140);
     x.font = '700 40px ' + FS; x.fillStyle = R.club.c2;
-    x.fillText(me.line, px, py + 196);
+    if (!me.b && !me.pd) { x.fillText(me.line, px, py + 196); return; }
+    /* v1.3 : buts et passes D en icônes (ballon, chaussure, ×N) */
+    const end = iconCount(x, px, py + 182, 26, me.b, me.pd, R.club.c2);
+    if (me.honneur) { x.textAlign = 'left'; x.font = '700 36px ' + FS; x.fillText('le but de l\'honneur', end + 4, py + 196); }
   }
   const RES_COL = { V: '#4CD08A', N: '#E6E9EF', D: '#FF7A70' };
   function matchRows(x, R, px, py, w, rowH, max) {

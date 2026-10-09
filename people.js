@@ -143,7 +143,7 @@ SCREENS.palmares = () => {
     h += '<button type="button" class="season' + (s.id === cs ? ' cur' : '') + '" data-a="palSeason" data-id="' + s.id + '"><div class="sh" style="background:' + esc(s.couleur1) + ';color:' + on1 + '">' + (lg ? '<img src="' + lg + '" alt="">' : '') +
       '<div style="flex:1;min-width:0"><div class="cd" style="font-size:19px">' + esc(s.libelle) + '</div><div style="font-size:13px;opacity:.86">' + esc([s.club, s.categorie].filter(Boolean).join(' · ')) + '</div></div>' +
       (s.id === cs ? '<span style="background:' + esc(s.couleur2) + ';color:' + onColor(s.couleur2 || '#E5D52B') + ';border-radius:7px;padding:3px 8px;font-size:12px;font-weight:700">En cours</span>' : '<span style="font-size:12px;font-weight:700;opacity:.85">Archivée</span>') + '</div>' +
-      '<div class="sb"><div><b>' + t.mj + '</b><span>matchs</span></div><div><b>' + vndDash(t.v, t.n, t.d) + '</b><span>V-N-D</span></div><div><b class="bp"><span class="bpi" style="color:var(--c2)">' + ICON.ball + '</span>' + me.b + '<span class="bpi">' + ICON.boot + '</span>' + me.pd + '</b><span>' + esc(pname(pid)) + ' : buts · passes D</span></div></div>' +
+      '<div class="sb"><div><b>' + t.mj + '</b><span>matchs</span></div><div><b>' + vndDash(t.v, t.n, t.d) + '</b><span>V-N-D</span></div><div><b class="bp"><span class="bpi">' + IC_BALL + '</span>' + me.b + '<span class="bpi">' + IC_BOOT + '</span>' + me.pd + '</b></div></div>' +
       (bt ? '<div class="tr">' + ICON.trophy.replace('class="ic"', 'class="ic" style="width:16px;height:16px"') + esc(bt.r.txt + ' · ' + bt.e.titre) + '</div>' : '<div style="height:8px"></div>') + '</button>';
   });
   const car = stats('*', pid);
@@ -495,7 +495,7 @@ function recapData(e, mid) {
     const card = document.createElement('canvas');
     const cd = cardData(pid, false); cd.stats = [['MJ', played], ['BUTS', b], ['PASSES D', pd]];
     try { PFT_CARDS.drawCard(card, cd, 1.4); } catch (er) {}
-    R.me = { name: p.nom, b, pd, top: !!ribbon, ribbon, line, card, _k: cd._k };
+    R.me = { name: p.nom, b, pd, top: !!ribbon, ribbon, line, card, _k: cd._k, honneur: line.indexOf('honneur') > 0 };
   }
   /* résultat et textes */
   if (kind === 'amical') {
