@@ -465,6 +465,7 @@ const QUOTES_D = [['TÊTE HAUTE !', 'On apprend, et on revient plus forts.'], ['
 const hash = s => { let h = 0; String(s).split('').forEach(c => h = (h * 31 + c.charCodeAt(0)) | 0); return Math.abs(h); };
 function koRes(m) { const s = score(m); if (s.p === s.c && m.tab && m.tab.nous != null) return wonKO(m) ? 'V' : 'D'; return result(m); }
 /* données du compte rendu d'une rencontre (ou d'un seul match si mid est donné) */
+const SMALL_CARDS = new Map();   // petites cartes des comptes rendus, gardées en mémoire
 function recapData(e, mid) {
   const S = DB.Saisons[e.saison] || curSeason() || {}, pid = suiviId(), p = player(pid);
   const ms = mid ? [DB.Matchs[mid]].filter(Boolean) : matchesOf(e.id).filter(isDone);
@@ -497,6 +498,27 @@ function recapData(e, mid) {
     try { PFT_CARDS.drawCard(card, cd, 1.4); } catch (er) {}
     R.me = { name: p.nom, b, pd, top: !!ribbon, ribbon, line, card, _k: cd._k, honneur: line.indexOf('honneur') > 0 };
   }
+  /* v1.4 : cartes de toute l'équipe (plateau / tournoi) et meilleur contributeur (match seul) */
+  const line = {}; const L = k => line[k] = line[k] || { b: 0, pd: 0 };
+  ms.forEach(m => goalsOf(m.id).forEach(g => { if (g.camp !== 'nous') return; if (g.buteur && g.special !== 'inconnu') L(g.buteur).b++; if (g.passeur) L(g.passeur).pd++; }));
+  const smallCard = k => {
+    const cd = cardData(k, false); let cv = SMALL_CARDS.get(cd._k);
+    if (!cv) { cv = document.createElement('canvas'); try { PFT_CARDS.drawCard(cv, cd, .6); } catch (er) {} SMALL_CARDS.set(cd._k, cv); if (SMALL_CARDS.size > 60) SMALL_CARDS.delete(SMALL_CARDS.keys().next().value); }
+    return { cv, k: cd._k };
+  };
+  if (kind !== 'amical') {
+    const PO = { GB: 0, DEF: 1, MIL: 2, ATT: 3 };
+    const ids = Object.values(DB.Joueurs).filter(j => ms.some(m => inMatch(m, j.id)) || line[j.id]).map(j => j.id);
+    const official = e.type === 'tournoi' && String(e.distinctions || '').includes('buteur');
+    R.team = ids.sort((a, b) => (PO[player(a).poste] ?? 9) - (PO[player(b).poste] ?? 9) || num(player(a).numero) - num(player(b).numero)).map(k => {
+      const c = smallCard(k), x = line[k] || { b: 0, pd: 0 };
+      return { name: pname(k), b: x.b, pd: x.pd, card: c.cv, _k: c.k, star: official && k === pid };
+    });
+  } else {
+    /* le plus de buts + passes D ; à égalité, le plus de buts */
+    const best = Object.keys(line).filter(k => player(k)).sort((a, b) => (line[b].b + line[b].pd) - (line[a].b + line[a].pd) || line[b].b - line[a].b)[0];
+    if (best) { const c = smallCard(best); R.best = { name: pname(best), b: line[best].b, pd: line[best].pd, card: c.cv, _k: c.k, me: best === pid }; }
+  }
   /* résultat et textes */
   if (kind === 'amical') {
     R.outcome = R.matches[0].res;
@@ -509,7 +531,7 @@ function recapData(e, mid) {
   } else { R.outcome = 'mixed'; R.headline = 'BILAN DU PLATEAU'; }
   return R;
 }
-function recapKey(R) { return JSON.stringify(Object.assign({}, R, { club: Object.assign({}, R.club, { logoImg: !!R.club.logoImg }), appIcon: !!R.appIcon, me: R.me ? Object.assign({}, R.me, { card: R.me._k }) : null })); }
+function recapKey(R) { return JSON.stringify(Object.assign({}, R, { club: Object.assign({}, R.club, { logoImg: !!R.club.logoImg }), appIcon: !!R.appIcon, me: R.me ? Object.assign({}, R.me, { card: R.me._k }) : null, best: R.best ? Object.assign({}, R.best, { card: R.best._k }) : null, team: (R.team || []).map(t => Object.assign({}, t, { card: t._k })) })); }
 const RECAP_CACHE = new Map();
 function recapCanvas(R) {
   const k = recapKey(R); let c = RECAP_CACHE.get(k);
@@ -537,17 +559,21 @@ function paintRecaps() {
 function recapText(R) {
   const opp = R.matches[0] ? R.matches[0].opp : '', sc = R.matches[0] ? R.matches[0].p + '-' + R.matches[0].c : '';
   const me = R.me, meLine = me && (me.b || me.pd) ? me.name + ' : ' + me.line.replace(' · ', ' et ') : '';
+  /* v1.4 : meilleur contributeur (match) et buteurs / passeurs de l'équipe (plateau, tournoi) */
+  const bpTxt = (b, pd) => [b ? b + ' but' + (b > 1 ? 's' : '') : '', pd ? pd + ' passe' + (pd > 1 ? 's' : '') + ' D' : ''].filter(Boolean).join(' et ');
+  const bestLine = R.best ? '\n⭐ Meilleur contributeur : ' + R.best.name + ' (' + bpTxt(R.best.b, R.best.pd) + ')' : '';
+  const teamLine = (R.team || []).filter(t => t.b || t.pd).map(t => t.name + ' ' + bpTxt(t.b, t.pd) + (t.star ? ' (meilleur buteur du tournoi)' : '')).join(', ');
   let t;
   if (R.kind === 'amical') {
     const buts = (R.goals || []).map(g => g.who + ' ' + g.min + '\'').join(', ');
-    if (R.outcome === 'V') t = '✅ VICTOIRE ' + sc + ' contre ' + opp + ' !' + (buts ? '\n⚽ ' + buts : '') + (meLine ? '\n🔥 ' + meLine : '');
-    else if (R.outcome === 'N') t = '🤝 Match nul ' + sc + ' contre ' + opp + '. ' + R.quote + (buts ? '\n⚽ ' + buts : '') + (meLine ? '\n👊 ' + meLine : '');
+    if (R.outcome === 'V') t = '✅ VICTOIRE ' + sc + ' contre ' + opp + ' !' + (buts ? '\n⚽ ' + buts : '') + bestLine;
+    else if (R.outcome === 'N') t = '🤝 Match nul ' + sc + ' contre ' + opp + '. ' + R.quote + (buts ? '\n⚽ ' + buts : '') + bestLine;
     else t = '💪 Défaite ' + sc + ' contre ' + opp + ', mais tête haute !' + (me && me.b ? ' ' + me.name + ' a marqué' + ((R.goals || []).filter(g => g.me).map(g => ' (' + g.min + '\')').join('')) + '.' : '') + ' On remet ça !';
   } else if (R.outcome === 'champion') {
-    t = '🏆 VAINQUEURS du ' + R.title + ' ! ' + R.stats.mj + ' matchs, ' + R.stats.v + ' victoires, ' + R.stats.bp + ' buts marqués.' + (me && me.ribbon ? '\n⚽ ' + me.name + ' finit ' + me.ribbon.toLowerCase().replace('meilleur buteur', 'meilleur buteur') + ' avec ' + me.line.replace(' · ', ' et ') + '.' : meLine ? '\n⚽ ' + meLine : '') + '\nQuelle journée ! 🎉';
+    t = '🏆 VAINQUEURS du ' + R.title + ' ! ' + R.stats.mj + ' matchs, ' + R.stats.v + ' victoires, ' + R.stats.bp + ' buts marqués, ' + R.stats.bc + ' encaissé' + (R.stats.bc > 1 ? 's' : '') + '.' + (teamLine ? '\n⚽ ' + teamLine : '') + '\nQuelle journée ! 🎉';
   } else {
     const head = R.headline === 'FINALISTE' ? '🥈 Finalistes du ' + R.title + ' !' : R.kind === 'tournoi' ? '🏟️ ' + R.title + ' : ' + R.headline.toLowerCase() : '📋 ' + R.title;
-    t = head + '\n' + R.stats.v + ' victoire' + (R.stats.v > 1 ? 's' : '') + ', ' + R.stats.n + ' nul' + (R.stats.n > 1 ? 's' : '') + ', ' + R.stats.d + ' défaite' + (R.stats.d > 1 ? 's' : '') + ' · ' + R.stats.bp + ' buts marqués.' + (meLine ? '\n⚽ ' + meLine + (me.ribbon ? ' (' + me.ribbon.toLowerCase() + ')' : '') : '');
+    t = head + '\n' + R.stats.v + ' victoire' + (R.stats.v > 1 ? 's' : '') + ', ' + R.stats.n + ' nul' + (R.stats.n > 1 ? 's' : '') + ', ' + R.stats.d + ' défaite' + (R.stats.d > 1 ? 's' : '') + ' · ' + R.stats.bp + ' buts marqués, ' + R.stats.bc + ' encaissé' + (R.stats.bc > 1 ? 's' : '') + '.' + (teamLine ? '\n⚽ ' + teamLine : '');
   }
   return t + '\n— ' + [R.club.name, R.club.cat].filter(Boolean).join(' ') + ' · Dans la Lucarne';
 }

@@ -261,7 +261,8 @@ textarea.inp{font-family:inherit;font-size:15px;line-height:1.4}
 .goal{min-height:132px;gap:6px;padding:10px 8px}
 .goal b{font-size:36px;letter-spacing:.04em}
 .goal .gl{display:flex;align-items:center;gap:8px;max-width:100%;font-family:'Barlow',sans-serif;font-weight:700;font-size:15px}
-.goal .gl>span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.goal .gl>span:last-child{overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.15;text-align:left;overflow-wrap:anywhere}
+.goal{flex:1 1 0;min-width:0}.goal .gl{min-width:0}.goal .gl>svg,.goal .gl>img,.goal .gl>span:first-child{flex:none}   /* v1.4 : deux boutons BUT toujours de même largeur */
 .clock{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap}
 /* glisser-déposer */
 [data-drag]{touch-action:none;-webkit-user-select:none;user-select:none}

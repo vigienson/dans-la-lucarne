@@ -144,9 +144,9 @@
     if (stroke) { x.lineWidth = s * .06; x.strokeStyle = stroke; x.strokeText(txt, W / 2, cy); }
     x.fillStyle = fill; x.fillText(txt, W / 2, cy); x.restore();
   }
-  function card(x, R, px, py, s, rot) {
-    if (!R.me || !R.me.card) return;
-    const c = R.me.card; x.save(); x.translate(px + c.width * s / 2, py + c.height * s / 2); x.rotate(rot || 0);
+  function card(x, R, px, py, s, rot, cv) {
+    const c = cv || (R.me && R.me.card); if (!c) return;
+    x.save(); x.translate(px + c.width * s / 2, py + c.height * s / 2); x.rotate(rot || 0);
     x.shadowColor = 'rgba(0,0,0,.55)'; x.shadowBlur = 30; x.shadowOffsetY = 14;
     x.drawImage(c, -c.width * s / 2, -c.height * s / 2, c.width * s, c.height * s); x.restore();
   }
@@ -159,20 +159,27 @@
     x.fillText(R.club.abbr, 185, cy + 140); fit(x, m.opp.toUpperCase(), 300, 32, '700', FS); x.fillText(m.opp.toUpperCase(), W - 185, cy + 140); x.globalAlpha = 1;
     if (m.tab) { x.font = '700 30px ' + FS; x.fillStyle = '#FFC46B'; x.fillText('tirs au but ' + m.tab, W / 2, cy + 140); }
   }
-  function goalsList(x, R, y, maxRows, title) {
+  /* v1.4 : TOUS les buts du match (1 ou 2 colonnes, lignes plus serrées s'il y en a beaucoup) jusqu'à yMax */
+  function goalsList(x, R, y, yMax, title) {
     const gs = R.goals || [];
     if (!gs.length) return y;
-    x.fillStyle = 'rgba(255,255,255,.65)'; x.font = '800 26px ' + FS; x.textAlign = 'left'; x.fillText(title || 'LES BUTS', 90, y); y += 22;
-    gs.slice(0, maxRows).forEach(g => {
-      y += 56;
-      drawBall(x, 108, y - 13, 19);
-      x.fillStyle = g.me ? R.club.c2 : '#FFFFFF'; x.font = '800 38px ' + FS; x.textAlign = 'left';
-      x.fillText(g.who, 140, y);
+    x.fillStyle = 'rgba(255,255,255,.65)'; x.font = '800 26px ' + FS; x.textAlign = 'left'; x.textBaseline = 'alphabetic'; x.fillText(title || 'LES BUTS', 90, y); y += 14;
+    const cols = gs.length > 5 ? 2 : 1, rows = Math.ceil(gs.length / cols), colW = cols === 2 ? 440 : 640;
+    const rowH = Math.min(56, (yMax - y) / rows), k = Math.max(.55, rowH / 56);
+    gs.forEach((g, i) => {
+      const c = Math.floor(i / rows), r = i % rows, cx = 90 + c * (colW + 20), by = y + (r + 1) * rowH - rowH * .22;
+      drawBall(x, cx + 18 * k, by - 13 * k, 18 * k);
+      const minW = 70 * k, nx = cx + 44 * k, avail = colW - (nx - cx) - minW;
+      x.textAlign = 'left'; x.fillStyle = g.me ? R.club.c2 : '#FFFFFF';
+      fit(x, g.who, g.pass ? avail * .58 : avail, Math.round(38 * k), '800', FS); x.fillText(g.who, nx, by);
       const w = x.measureText(g.who).width;
-      if (g.pass) { drawBoot(x, 140 + w + 38, y - 12, 16); x.fillStyle = 'rgba(255,255,255,.7)'; x.font = '600 30px ' + FS; x.fillText(g.pass, 140 + w + 62, y); }
-      x.textAlign = 'right'; x.fillStyle = 'rgba(255,255,255,.85)'; x.font = '800 36px ' + F9; x.fillText(g.min + '\'', W - 90, y);
+      if (g.pass) {
+        const bx = nx + w + 26 * k; drawBoot(x, bx, by - 12 * k, 15 * k);
+        x.fillStyle = 'rgba(255,255,255,.72)'; fit(x, g.pass, cx + colW - minW - (bx + 22 * k), Math.round(30 * k), '600', FS); x.fillText(g.pass, bx + 22 * k, by);
+      }
+      x.textAlign = 'right'; x.fillStyle = 'rgba(255,255,255,.85)'; x.font = '800 ' + Math.round(36 * k) + 'px ' + F9; x.fillText(g.min + '\'', cx + colW, by);
     });
-    return y;
+    return y + rows * rowH;
   }
   function statTiles(x, items, y, h) {
     const n = items.length, gap = 18, w = (W - 120 - gap * (n - 1)) / n;
@@ -183,10 +190,10 @@
       x.fillStyle = 'rgba(255,255,255,.7)'; x.font = '700 24px ' + FS; x.fillText(it[1].toUpperCase(), px + w / 2, y + h * .86);
     });
   }
-  function meBox(x, R, px, py, w, ribbon, ribbonBg, ribbonFg) {
-    const me = R.me; if (!me) return;
+  function meBox(x, R, px, py, w, ribbon, ribbonBg, ribbonFg, who) {
+    const me = who || R.me; if (!me) return;
     if (ribbon) pill(x, ribbon, px, py, ribbonBg || goldFill(x, py, py + 40), ribbonFg || '#2A1C00', 30);
-    x.fillStyle = '#FFFFFF'; x.textAlign = 'left'; x.font = '900 92px ' + F9; x.fillText(me.name.toUpperCase(), px, py + 140);
+    x.fillStyle = '#FFFFFF'; x.textAlign = 'left'; fit(x, me.name.toUpperCase(), w, 92, '900', F9); x.fillText(me.name.toUpperCase(), px, py + 140);
     x.font = '700 40px ' + FS; x.fillStyle = R.club.c2;
     if (!me.b && !me.pd) { x.fillText(me.line, px, py + 196); return; }
     /* v1.3 : buts et passes D en icônes (ballon, chaussure, ×N) */
@@ -194,20 +201,71 @@
     if (me.honneur) { x.textAlign = 'left'; x.font = '700 36px ' + FS; x.fillText('le but de l\'honneur', end + 4, py + 196); }
   }
   const RES_COL = { V: '#4CD08A', N: '#E6E9EF', D: '#FF7A70' };
-  function matchRows(x, R, px, py, w, rowH, max) {
-    (R.matches || []).slice(-max).forEach((m, i) => {
-      const y = py + i * (rowH + 10);
-      x.fillStyle = 'rgba(255,255,255,.08)'; rr(x, px, y, w, rowH, 16); x.fill();
-      x.fillStyle = RES_COL[m.res]; rr(x, px, y, 10, rowH, 5); x.fill();
+  /* matchs d'un plateau / tournoi : 1 colonne, ou 2 au-delà de 4 matchs ; hauteur max hMax ; renvoie le bas */
+  function matchRows(x, R, px, py, w, rowH, hMax) {
+    const ms = R.matches || [], cols = ms.length > 4 ? 2 : 1, rows = Math.ceil(ms.length / cols), gap = 8;
+    rowH = Math.min(rowH, (hMax - gap * (rows - 1)) / rows);
+    const k = Math.max(.6, rowH / 66), cw = cols === 2 ? (w - 16) / 2 : w;
+    ms.forEach((m, i) => {
+      const c = Math.floor(i / rows), r = i % rows, X = px + c * (cw + 16), y = py + r * (rowH + gap);
+      x.fillStyle = 'rgba(255,255,255,.08)'; rr(x, X, y, cw, rowH, 14 * k); x.fill();
+      x.fillStyle = RES_COL[m.res]; rr(x, X, y, 9, rowH, 4); x.fill();
       x.textAlign = 'left'; x.textBaseline = 'middle';
-      let tx = px + 28;
-      if (m.phase) { x.font = '800 22px ' + FS; const pw = x.measureText(m.phase.toUpperCase()).width + 22; x.fillStyle = 'rgba(255,255,255,.14)'; rr(x, tx, y + rowH / 2 - 17, pw, 34, 17); x.fill(); x.fillStyle = '#FFFFFF'; x.fillText(m.phase.toUpperCase(), tx + 11, y + rowH / 2 + 1); tx += pw + 14; }
-      x.fillStyle = '#FFFFFF'; fit(x, 'vs ' + m.opp, px + w - tx - 150, 32, '700', FS); x.fillText('vs ' + m.opp, tx, y + rowH / 2 + 1);
-      x.textAlign = 'right'; x.fillStyle = RES_COL[m.res]; x.font = '900 44px ' + F9; x.fillText(m.p + '-' + m.c + (m.tab ? '*' : ''), px + w - 24, y + rowH / 2 + 3);
+      let tx = X + 24;
+      if (m.phase) { x.font = '800 ' + Math.round(22 * k) + 'px ' + FS; const pw = x.measureText(m.phase.toUpperCase()).width + 20 * k; x.fillStyle = 'rgba(255,255,255,.14)'; rr(x, tx, y + rowH / 2 - 16 * k, pw, 32 * k, 16 * k); x.fill(); x.fillStyle = '#FFFFFF'; x.fillText(m.phase.toUpperCase(), tx + 10 * k, y + rowH / 2 + 1); tx += pw + 12; }
+      x.fillStyle = '#FFFFFF'; fit(x, 'vs ' + m.opp, X + cw - tx - 110 * k, Math.round(32 * k), '700', FS); x.fillText('vs ' + m.opp, tx, y + rowH / 2 + 1);
+      x.textAlign = 'right'; x.fillStyle = RES_COL[m.res]; x.font = '900 ' + Math.round(44 * k) + 'px ' + F9; x.fillText(m.p + '-' + m.c + (m.tab ? '*' : ''), X + cw - 20, y + rowH / 2 + 3);
       x.textBaseline = 'alphabetic';
     });
+    return py + rows * rowH + gap * (rows - 1);
   }
-
+  /* v1.4 : buts marqués / encaissés du plateau ou du tournoi */
+  function goalsStrip(x, R, y) {
+    const w = (W - 140) / 2, h = 66;
+    [[R.stats.bp, R.stats.bp > 1 ? 'BUTS MARQUÉS' : 'BUT MARQUÉ', '#4CD08A'], [R.stats.bc, R.stats.bc > 1 ? 'BUTS ENCAISSÉS' : 'BUT ENCAISSÉ', '#FF7A70']].forEach((it, i) => {
+      const px = 60 + i * (w + 20);
+      x.fillStyle = 'rgba(255,255,255,.08)'; rr(x, px, y, w, h, 18); x.fill();
+      x.font = '900 52px ' + F9; const nw = x.measureText(String(it[0])).width; x.font = '800 26px ' + FS; const lw = x.measureText(it[1]).width;
+      let cx = px + (w - (44 + nw + 14 + lw)) / 2;
+      drawBall(x, cx + 18, y + h / 2, 18); cx += 44;
+      x.textAlign = 'left'; x.textBaseline = 'middle'; x.fillStyle = it[2]; x.font = '900 52px ' + F9; x.fillText(String(it[0]), cx, y + h / 2 + 3); cx += nw + 14;
+      x.fillStyle = 'rgba(255,255,255,.8)'; x.font = '800 26px ' + FS; x.fillText(it[1], cx, y + h / 2 + 2); x.textBaseline = 'alphabetic';
+    });
+    return y + h;
+  }
+  /* largeur des icônes « ballon ×N  chaussure ×N » */
+  function iconsWidth(x, r, b, pd) {
+    x.font = '800 ' + Math.round(r * 1.5) + 'px ' + FS; let w = 0;
+    [b, pd].forEach(n => { if (!n) return; w += r * 2 + 4 + (n > 1 ? x.measureText('×' + n).width : 0) + r * .9; });
+    return Math.max(0, w - r * .9);
+  }
+  /* v1.4 : toute l'équipe, cartes alignées, buts / passes D en dessous (aucun joueur mis plus en avant) */
+  function teamRow(x, R, y0, y1) {
+    const t = R.team || []; if (!t.length) return;
+    const cols = t.length <= 10 ? t.length : Math.ceil(t.length / 2), rows = Math.ceil(t.length / cols), gap = 12;
+    const iconH = 40, ratio = 534 / 380;
+    let cw = Math.min(150, (W - 100 - gap * (cols - 1)) / cols);
+    cw = Math.min(cw, ((y1 - y0 - 40) / rows - iconH) / ratio);
+    const ch = cw * ratio;
+    y0 += Math.max(0, (y1 - y0 - 40 - rows * (ch + iconH)) / 2);   // bloc centré dans la place libre
+    x.fillStyle = 'rgba(255,255,255,.65)'; x.font = '800 26px ' + FS; x.textAlign = 'center'; x.textBaseline = 'alphabetic'; x.fillText('L\'ÉQUIPE', W / 2, y0 + 24);
+    y0 += 40;
+    t.forEach((p, i) => {
+      const r = Math.floor(i / cols), inRow = Math.min(cols, t.length - r * cols), c = i % cols;
+      const rowW = inRow * cw + (inRow - 1) * gap, px = (W - rowW) / 2 + c * (cw + gap), py = y0 + r * (ch + iconH);
+      x.save(); x.shadowColor = 'rgba(0,0,0,.5)'; x.shadowBlur = 16; x.shadowOffsetY = 6;
+      if (p.card && p.card.width) x.drawImage(p.card, px, py, cw, ch); x.restore();
+      if (p.star) { x.fillStyle = goldFill(x, py - 14, py + 14); x.beginPath(); x.arc(px + cw - 8, py + 10, 17, 0, 7); x.fill(); x.fillStyle = '#2A1C00'; star(x, px + cw - 8, py + 10, 11); }
+      const ir = Math.max(11, Math.min(17, cw * .12)), iw = iconsWidth(x, ir, p.b, p.pd);
+      if (iw) iconCount(x, px + (cw - iw) / 2, py + ch + iconH / 2 + 2, ir, p.b, p.pd, '#FFFFFF');
+    });
+  }
+  /* v1.4 : meilleur contributeur du match (le plus de buts + passes D) avec sa carte */
+  function bestBox(x, R, py, bg, fg) {
+    const b = R.best; if (!b) return;
+    card(x, R, 800, py - 40, 1, .06, b.card);
+    meBox(x, R, 90, py, 640, 'MEILLEUR CONTRIBUTEUR', bg, fg, b);
+  }
   /* ---------- les modèles ---------- */
   const T = {};
   /* titre en tournoi */
@@ -220,10 +278,9 @@
     trophy(x, W / 2, 330, 190);
     bigTitle(x, 'VAINQUEUR', 575, 150, goldFill(x, 460, 575), '#3A2800');
     x.fillStyle = '#FFFFFF'; x.textAlign = 'center'; x.font = '700 42px ' + FS; x.fillText(R.title, W / 2, 632);
-    card(x, R, 58, 668, .48, -.05);
-    if (R.me) meBox(x, R, 360, 676, 660, R.me.ribbon || (R.me.b ? 'BUTEUR' : 'CHAMPION'));
-    matchRows(x, R, 360, 900, 660, 50, 3);
-    statTiles(x, [[R.stats.mj, 'matchs'], [R.stats.v, 'victoires', '#4CD08A'], [R.stats.bp, 'buts marqués'], [R.stats.bc, 'encaissés']], 1090, 140);
+    statTiles(x, [[R.stats.mj, 'matchs'], [R.stats.v, 'victoires', '#4CD08A'], [R.stats.bp, 'buts marqués', '#4CD08A'], [R.stats.bc, 'encaissés', '#FF7A70']], 662, 116);
+    const yb = matchRows(x, R, 60, 796, W - 120, 52, 150);
+    teamRow(x, R, yb + 14, 1262);
     footer(x, R);
   };
   /* victoire (match amical, ou match d'un plateau / tournoi partagé seul) */
@@ -234,11 +291,8 @@
     header(x, R, R.label);
     bigTitle(x, 'VICTOIRE', 330, 180, R.club.c2, 'rgba(0,0,0,.35)');
     scoreRow(x, R, R.matches[0], 520);
-    let y = goalsList(x, R, 760, 4, 'LES BUTEURS');
-    if (R.me && (R.me.b || R.me.pd)) {
-      card(x, R, 770, 985, .42, .07);
-      meBox(x, R, 90, Math.max(y + 40, 1000), 560, R.me.b >= 4 ? 'QUADRUPLÉ' : R.me.b === 3 ? 'TRIPLÉ' : R.me.b === 2 ? 'DOUBLÉ' : R.me.b ? 'BUTEUR' : 'PASSEUR DÉCISIF');
-    }
+    goalsList(x, R, 750, 1000, 'LES BUTS');
+    bestBox(x, R, 1020);
     footer(x, R);
   };
   /* match nul */
@@ -248,8 +302,8 @@
     bigTitle(x, 'MATCH NUL', 320, 160, '#FFFFFF');
     x.fillStyle = 'rgba(255,255,255,.75)'; x.font = '600 38px ' + FB; x.textAlign = 'center'; x.fillText(R.quote, W / 2, 390);
     scoreRow(x, R, R.matches[0], 560);
-    goalsList(x, R, 800, 4, 'LES BUTS');
-    if (R.me && (R.me.b || R.me.pd)) { card(x, R, 770, 985, .42, .06); meBox(x, R, 90, 1040, 560, 'DANS LE COUP', '#FFFFFF', '#0D1118'); }
+    goalsList(x, R, 790, 1010, 'LES BUTS');
+    bestBox(x, R, 1030);
     footer(x, R);
   };
   /* défaite : sobre et encourageant */
@@ -260,11 +314,9 @@
     bigTitle(x, R.quoteTitle, 370, 120, '#FFFFFF');
     x.fillStyle = 'rgba(255,255,255,.72)'; x.font = '600 36px ' + FB; x.fillText(R.quote, W / 2, 435);
     scoreRow(x, R, R.matches[0], 610);
-    let y = goalsList(x, R, 850, 3, 'NOS BUTS');
-    if (R.me && (R.me.b || R.me.pd)) {
-      card(x, R, 770, 985, .42, .06);
-      meBox(x, R, 90, Math.max(y + 40, 1010), 560, 'LE POINT POSITIF', '#FFFFFF', '#0D1118');
-    } else {
+    goalsList(x, R, 840, 1020, 'NOS BUTS');
+    if (R.best) bestBox(x, R, 1040, '#FFFFFF', '#0D1118');
+    else {
       x.fillStyle = 'rgba(255,255,255,.08)'; rr(x, 90, 1040, W - 180, 150, 24); x.fill();
       x.fillStyle = '#FFFFFF'; x.font = '800 40px ' + FS; x.textAlign = 'center'; x.fillText('PROCHAIN MATCH : ON REMET ÇA !', W / 2, 1130);
     }
@@ -274,19 +326,19 @@
   T.series = (x, R) => {
     background(x, R, R.stats.v >= R.stats.d ? 'win' : 'loss');
     header(x, R, R.label);
-    bigTitle(x, R.headline, 300, 130, '#FFFFFF');
-    x.fillStyle = 'rgba(255,255,255,.8)'; x.textAlign = 'center'; x.font = '700 40px ' + FS; x.fillText(R.title, W / 2, 362);
-    /* trois grosses pastilles V / N / D */
+    bigTitle(x, R.headline, 290, 124, '#FFFFFF');
+    x.fillStyle = 'rgba(255,255,255,.8)'; x.textAlign = 'center'; x.font = '700 38px ' + FS; x.fillText(R.title, W / 2, 346);
+    /* trois pastilles V / N / D */
     [['V', R.stats.v, 'VICTOIRES', '#4CD08A'], ['N', R.stats.n, 'NULS', '#E6E9EF'], ['D', R.stats.d, 'DÉFAITES', '#FF7A70']].forEach((it, i) => {
       const cx = 220 + i * 320;
-      x.fillStyle = hexA(it[3], .14); x.beginPath(); x.arc(cx, 500, 92, 0, 7); x.fill();
+      x.fillStyle = hexA(it[3], .14); x.beginPath(); x.arc(cx, 448, 74, 0, 7); x.fill();
       x.lineWidth = 6; x.strokeStyle = it[3]; x.stroke();
-      x.fillStyle = it[3]; x.font = '900 110px ' + F9; x.textBaseline = 'middle'; x.fillText(String(it[1]), cx, 506); x.textBaseline = 'alphabetic';
-      x.fillStyle = 'rgba(255,255,255,.75)'; x.font = '800 26px ' + FS; x.fillText(it[2], cx, 630);
+      x.fillStyle = it[3]; x.font = '900 92px ' + F9; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(String(it[1]), cx, 453); x.textBaseline = 'alphabetic';
+      x.fillStyle = 'rgba(255,255,255,.75)'; x.font = '800 24px ' + FS; x.fillText(it[2], cx, 552);
     });
-    matchRows(x, R, 60, 680, W - 120, 66, 5);
-    const yy = 680 + Math.min(5, R.matches.length) * 76 + 30;
-    if (R.me && (R.me.b || R.me.pd)) { card(x, R, 760, yy - 10, .4, .06); meBox(x, R, 90, yy, 600, R.me.ribbon || (R.me.b ? 'BUTEUR' : 'PASSEUR DÉCISIF')); }
+    goalsStrip(x, R, 576);
+    const yb = matchRows(x, R, 60, 662, W - 120, 56, 290);
+    teamRow(x, R, yb + 14, 1262);
     footer(x, R);
   };
 

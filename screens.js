@@ -501,7 +501,7 @@ SCREENS.live = p => {
   h += done ? '<p class="mu" style="font-weight:700">Match terminé · correction des buts</p>' : clockLine(m);
   h += '</div>';
   h += '<div class="row" style="gap:12px;align-items:stretch">' +
-    '<button type="button" class="goal" data-a="lGoal" data-camp="nous" style="background:var(--c1);color:var(--on1);border:3px solid var(--c2)"><b>BUT</b><span class="gl">' + clubBadge(30) + '<span>' + esc(S.club || S.abrev || 'Nous') + '</span></span></button>' +
+    '<button type="button" class="goal" data-a="lGoal" data-camp="nous" style="background:var(--c1);color:var(--on1);border:3px solid var(--c2)"><b>BUT</b><span class="gl">' + clubBadge(30) + '<span>' + esc(S.abrev || S.club || 'Nous') + '</span></span></button>' +
     '<button type="button" class="goal" data-a="lGoal" data-camp="eux" style="background:#C62828;color:#FFFFFF;border:3px solid #FF8A80"><b>BUT</b><span class="gl">' + VS(30, 'inv') + '<span>' + esc(m.adversaire || 'Adversaire') + '</span></span></button></div>';
   if (!done && cfg.n === 2 && c.half === 1 && !c.mt) h += '<button type="button" class="' + (over ? 'btn' : 'btn2') + '" data-a="lHalf">Siffler la mi-temps</button>';
   if (!done && c.mt) h += '<button type="button" class="btn" data-a="l2nd">' + ICON.play + 'Coup d\'envoi de la 2e mi-temps</button>';
