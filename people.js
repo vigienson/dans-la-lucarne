@@ -6,11 +6,11 @@ SCREENS.squad = () => {
   const S = curSeason(), pid = suiviId(), R = roster().filter(p => p.id !== pid);
   let h = topBar('Effectif', R.length + 1 + ' joueurs · ' + [S.categorie, S.libelle].filter(Boolean).join(' · '), { right: '<button type="button" class="ib" style="background:var(--c2);color:var(--on2)" data-a="addPlayer" aria-label="Ajouter un joueur">' + ICON.plus + '</button>' });
   h += '<div class="main">';
-  if (player(pid)) h += '<p class="lbl">Joueur suivi</p><button type="button" class="hero-card" data-a="go" data-s="fiche" data-p=\'{"pid":"' + pid + '"}\'>' + cardCv(pid, .56, true) + '</button>';
+  if (player(pid)) h += '<p class="lbl">' + (isParent() ? 'Mon fils' : 'Joueur suivi') + '</p><button type="button" class="hero-card" data-a="go" data-s="fiche" data-p=\'{"pid":"' + pid + '"}\'>' + cardCv(pid, .56, true) + '</button>';
   h += '<div class="lbl-row"><p class="lbl">Coéquipiers</p><button type="button" class="chip" data-a="addPlayer">' + ICON.plus + 'Ajouter</button></div>';
   if (!R.length) h += '<div class="empty">Ajoute les coéquipiers pour les choisir dans les compositions.</div>';
   else h += '<div class="cards-grid">' + R.map(p => '<button type="button" data-a="go" data-s="fiche" data-p=\'{"pid":"' + p.id + '"}\'>' + cardCv(p.id, .29) + '</button>').join('') + '</div>';
-  h += '<p class="mu" style="text-align:center">Toucher une carte pour voir les statistiques de la saison.</p>';
+  h += '<p class="mu" style="text-align:center">Toucher une carte pour voir la fiche du joueur.</p>';
   h += '</div>';
   return { html: h, tab: 'squad' };
 };
@@ -52,42 +52,114 @@ ACT.setSuivi = async () => {
   if (!(S.effectif || []).includes(p.id)) ops.push(put('Saisons', { id: S.id, effectif: (S.effectif || []).concat(p.id) }));
   commit(ops); render(); toast(p.nom + ' est maintenant le joueur suivi');
 };
-/* ---------- fiche joueur ---------- */
+/* ---------- fiche joueur (V2 : pour tous les joueurs ; tuiles, anneaux, exploits, tableaux à icônes) ---------- */
 SCREENS.fiche = p => {
   const pl = player(p.pid); if (!pl) return SCREENS.squad({});
-  const me = pl.id === suiviId(), S = curSeason(), t = me ? (p.t || 'res') : 'res';
-  let h = topBar(pl.nom + (pl.numero ? ' · n°' + pl.numero : ''), posteLbl(pl.poste), { back: true, right: '<button type="button" class="ib" data-a="editPlayer" aria-label="Modifier la carte">' + ICON.edit + '</button>' });
+  const S = curSeason(), t = p.t || 'res', sid = p.sid || S.id, adm = isAdmin(), kids = isParent() ? myKids() : [];
+  const mine = kids.includes(pl.id);
+  let h = topBar(pl.nom + (pl.numero ? ' · n°' + pl.numero : ''), posteLbl(pl.poste) + (mine ? ' · mon fils' : ''), { back: true, right: adm ? '<button type="button" class="ib" data-a="editPlayer" aria-label="Modifier la carte">' + ICON.edit + '</button>' : '' });
   h += '<div class="main">';
   h += '<div style="align-self:center">' + cardCv(pl.id, .6, true) + '</div>';
-  if (me) {
+  if (adm) {
     h += '<div class="row"><button type="button" class="btn2" data-a="photoNew">' + ICON.cam + (pl.photo ? 'Changer la photo' : 'Ajouter une photo') + '</button>' + (pl.photo ? '<button type="button" class="btn2" data-a="photoEdit" style="flex:none;width:auto">Recadrer</button>' : '') + '</div>';
-    h += '<div class="seg" role="tablist"><button type="button" class="' + (t === 'res' ? 'on' : '') + '" data-a="fTab" data-t="res">Résumé</button><button type="button" class="' + (t === 'det' ? 'on' : '') + '" data-a="fTab" data-t="det">Par type et saison</button></div>';
-  }
-  else h += '<button type="button" class="btn2" data-a="setSuivi">' + ICON.star.replace('<svg ', '<svg style="width:18px;height:18px;color:var(--c2)" ') + 'Choisir comme joueur suivi</button>';
-  if (t === 'res') {
-    const st = stats(S.id, pl.id);
-    h += '<p class="lbl">Saison ' + esc(S.libelle) + '</p><div class="tiles t3">' +
-      tl(st.mj, 'matchs joués') + tl(st.b, 'buts', 'color:var(--c2)') + tl(st.pd, 'passes D') +
-      tl(st.type.amical.ev, 'amica' + (st.type.amical.ev > 1 ? 'ux' : 'l')) + tl(st.type.plateau.ev, 'plateau' + (st.type.plateau.ev > 1 ? 'x' : '') + '<br>(' + st.type.plateau.mj + ' matchs)') + tl(st.type.tournoi.ev, 'tournoi' + (st.type.tournoi.ev > 1 ? 's' : '') + '<br>(' + st.type.tournoi.mj + ' matchs)') + '</div>';
-    h += '<div class="row"><div class="tile" style="flex:1;flex-direction:row;justify-content:center;gap:8px;background:var(--s1);border-radius:14px;padding:12px"><b style="font-size:22px">' + (st.mj ? (st.b / st.mj).toFixed(1).replace('.', ',') : '0') + '</b><span>but / match</span></div><div class="tile" style="flex:1;flex-direction:row;justify-content:center;gap:8px;background:var(--s1);border-radius:14px;padding:12px"><b style="font-size:22px">' + st.v + '</b><span>victoires</span></div></div>';
-  } else h += detailStats(pl.id, p.sid || S.id);
+    const fond = pl.carte === 'forme' || pl.carte === 'or' ? pl.carte : (pl.id === reg('suivi') ? 'forme' : 'or');
+    h += '<div class="lbl-row"><p class="lbl">Fond de la carte</p></div><div class="seg"><button type="button" class="' + (fond === 'forme' ? 'on' : '') + '" data-a="setCarte" data-k="forme">En forme</button><button type="button" class="' + (fond === 'or' ? 'on' : '') + '" data-a="setCarte" data-k="or">Or</button></div>';
+    if (pl.id !== reg('suivi')) h += '<button type="button" class="btn2" data-a="setSuivi">' + ICON.star.replace('<svg ', '<svg style="width:18px;height:18px;color:var(--c2)" ') + 'Choisir comme joueur suivi</button>';
+  } else if (mine) {
+    const wait = rows('Propositions').some(x => x.joueur === pl.id && x.statut === 'attente');
+    h += '<button type="button" class="btn2" data-a="propPhoto">' + ICON.cam + 'Proposer une autre photo</button><p class="mu" style="text-align:center">' + (wait ? 'Photo envoyée : en attente de validation par l\'organisateur.' : 'L\'organisateur valide la photo avant qu\'elle n\'apparaisse sur la carte.') + '</p>';
+  } else if (isParent() && kids.length < 2) h += '<button type="button" class="chip" style="align-self:center" data-a="kidAdd">C\'est mon fils</button>';
+  h += '<div class="seg" role="tablist"><button type="button" class="' + (t === 'res' ? 'on' : '') + '" data-a="fTab" data-t="res">Résumé</button><button type="button" class="' + (t === 'det' ? 'on' : '') + '" data-a="fTab" data-t="det">Par type et saison</button></div>';
+  h += '<div class="scroll-x">' + seasons().map(x => '<button type="button" class="chip' + (x.id === sid ? ' on' : '') + '" data-a="fSeason" data-id="' + x.id + '">' + esc(x.libelle) + '</button>').join('') + '<button type="button" class="chip' + (sid === '*' ? ' on' : '') + '" data-a="fSeason" data-id="*">Carrière</button></div>';
+  h += t === 'res' ? resumeStats(pl.id, sid) : detailStats(pl.id, sid);
+  if (mine) h += '<button type="button" class="chip" style="align-self:center;margin-top:8px" data-a="kidDel">Ce n\'est pas mon fils</button>';
   h += '</div>';
   return { html: h };
 };
 const tl = (v, l, st) => '<div class="tile"><b' + (st ? ' style="' + st + '"' : '') + '>' + v + '</b><span>' + l + '</span></div>';
 ACT.fTab = (el, d) => { cur().p.t = d.t; render(); };
 ACT.fSeason = (el, d) => { cur().p.sid = d.id; render(); };
+ACT.setCarte = (el, d) => { commit([put('Joueurs', { id: cur().p.pid, carte: d.k })]); render(); };
+/* petites icônes du tableau de bord */
+const SI = {
+  pitch: '<svg viewBox="0 0 24 24" fill="none" stroke="#8FB4E8" stroke-width="1.8" aria-hidden="true"><rect x="2.5" y="5" width="19" height="14" rx="2"/><path d="M12 5v14"/><circle cx="12" cy="12" r="2.6"/><path d="M2.5 9h3v6h-3M21.5 9h-3v6h3"/></svg>',
+  star: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8l2.8 5.8 6.3.9-4.6 4.4 1.1 6.3L12 17.2l-5.6 3 1.1-6.3-4.6-4.4 6.3-.9z" fill="#4CD08A"/></svg>',
+  target: '<svg viewBox="0 0 24 24" fill="none" stroke="#FFC46B" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5" fill="#FFC46B"/></svg>',
+  flame: '<svg viewBox="0 0 24 24" fill="none" stroke="#FF8A70" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 3c1 3 4 4.5 4 8.5a4 4 0 0 1-8 0c0-2 1-3 1.5-4 .5 1.5 1.5 2 2.5 2 0-2.5-1-4.5 0-6.5z"/></svg>',
+  cup: '<svg viewBox="0 0 24 24" fill="none" stroke="#FFC46B" stroke-width="1.8" aria-hidden="true"><path d="M8 4h8v5a4 4 0 0 1-8 0zM12 13v4M9.5 17h5v4h-5zM8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4"/></svg>',
+  starO: '<svg viewBox="0 0 24 24" fill="none" stroke="#E5D52B" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.8l2.8 5.8 6.3.9-4.6 4.4 1.1 6.3L12 17.2l-5.6 3 1.1-6.3-4.6-4.4 6.3-.9z"/></svg>',
+  cal: '<svg viewBox="0 0 24 24" fill="none" stroke="#8FB4FF" stroke-width="1.8" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>',
+  amical: '<svg viewBox="0 0 24 24" fill="none" stroke="#8FB4FF" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5l4 3-1.5 4.5h-5L8 10.5z"/></svg>',
+  plateau: '<svg viewBox="0 0 24 24" fill="none" stroke="#4CD08A" stroke-width="1.8" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg>',
+  tournoi: '<svg viewBox="0 0 24 24" fill="none" stroke="#FFC46B" stroke-width="1.8" aria-hidden="true"><path d="M8 4h8v5a4 4 0 0 1-8 0zM12 13v4M9.5 17h5v4h-5z"/></svg>'
+};
+const TYPE_COL = { amical: '#8FB4FF', plateau: '#4CD08A', tournoi: '#FFC46B' };
+/* matchs terminés d'un joueur, dans l'ordre chronologique (sid = saison ou '*') */
+function playedMatches(pid, sid) {
+  const evs = (sid === '*' ? rows('Rencontres').filter(e => DB.Saisons[e.saison] && TYPE_LBL[e.type]) : eventsOf(sid)).slice()
+    .sort((a, b) => String(a.date + (a.heure || '')).localeCompare(String(b.date + (b.heure || ''))) || String(a.creeLe).localeCompare(String(b.creeLe)));
+  const out = [];
+  evs.forEach(e => matchesOf(e.id).filter(isDone).sort((a, b) => num(a.ordre) - num(b.ordre)).forEach(m => { if (inMatch(m, pid)) out.push({ e, m, x: playerLine(m, pid) }); }));
+  return out;
+}
+/* exploits calculés tout seuls ; chacun garde la liste des matchs (ou du tournoi) concernés */
+function exploits(pid, sid) {
+  const pm = playedMatches(pid, sid), out = [];
+  const wins = []; new Set(pm.filter(r => r.e.type === 'tournoi').map(r => r.e)).forEach(e => { if (e.statut === 'termine' && eventResult(e).txt === 'Vainqueur') wins.push(e); });
+  if (wins.length) out.push({ ic: 'cup', t: plural(wins.length, 'tournoi gagné', 'tournois gagnés'), s: wins.map(e => e.titre).join(', '), ev: wins });
+  const best = Math.max(0, ...pm.map(r => r.x.b + r.x.pd));
+  if (best > 0) {
+    const bm = pm.filter(r => r.x.b + r.x.pd === best), x = bm[0].x;
+    const lbl = x.b >= 4 ? 'Quadruplé' : x.b === 3 ? 'Triplé' : x.b === 2 && !x.pd ? 'Doublé' : [x.b ? plural(x.b, 'but', 'buts') : '', x.pd ? plural(x.pd, 'passe D', 'passes D') : ''].filter(Boolean).join(' + ');
+    out.push({ ic: 'starO', t: 'Meilleur match', s: lbl + (bm.length === 1 ? ' vs ' + (bm[0].m.adversaire || '?') : ' · ' + bm.length + ' fois'), ms: bm });
+  }
+  let run = [], top = [];
+  pm.forEach(r => { if (r.x.b > 0) { run.push(r); if (run.length > top.length) top = run.slice(); } else run = []; });
+  if (top.length >= 2) out.push({ ic: 'flame', t: top.length + ' matchs de suite', s: 'avec au moins 1 but', ms: top });
+  const first = pm.find(r => r.x.b > 0);
+  if (first) out.push({ ic: 'cal', t: sid === '*' ? '1er but' : '1er but de la saison', s: fdate(first.e.date) + ' vs ' + (first.m.adversaire || '?'), ms: [first] });
+  return out;
+}
+let EXPL = [];
+ACT.exploit = (el, d) => {
+  const x = EXPL[+d.i]; if (!x) return;
+  if (x.ev && x.ev.length === 1) return ACT.openEvent(null, { id: x.ev[0].id });
+  if (x.ms && x.ms.length === 1) return ACT.openMatch(null, { id: x.ms[0].m.id });
+  const items = x.ev ? x.ev.map(e => '<button type="button" class="it" data-a="openEvent" data-id="' + e.id + '">' + typeIcon(e.type) + '<div class="grow"><div class="t1">' + esc(evTitle(e)) + '</div><p class="mu">' + esc(fdate(e.date)) + '</p></div></button>')
+    : x.ms.map(r => { const sc = score(r.m); return '<button type="button" class="it" data-a="openMatch" data-id="' + r.m.id + '">' + typeIcon(r.e.type) + '<div class="grow"><div class="t1">vs ' + esc(r.m.adversaire || '?') + '</div><p class="mu">' + esc(fdate(r.e.date) + (r.e.type !== 'amical' ? ' · ' + evTitle(r.e) : '')) + '</p></div><span class="sci">' + icBP(r.x.b, r.x.pd) + '</span><span class="cd ' + RCLS[result(r.m)] + '" style="font-size:20px;margin-left:8px">' + sc.p + '-' + sc.c + '</span></button>'; });
+  openSheet('<h2>' + esc(x.t) + '</h2><p class="mu">' + esc(x.s) + '</p><div style="display:flex;flex-direction:column;gap:8px">' + items.join('') + '</div><button type="button" class="btn2" data-a="sheetClose">Fermer</button>');
+};
+function ring(pct, col, icon, val, lbl) {
+  const p = Math.max(0, Math.min(100, Math.round(pct)));
+  return '<div class="ring-w"><div class="ring" style="background:conic-gradient(' + col + ' 0 ' + p + '%, var(--s2) ' + p + '% 100%)"><div><span class="ri">' + icon + '</span><b>' + val + '</b></div></div><span>' + lbl + '</span></div>';
+}
+function resumeStats(pid, sid) {
+  const st = stats(sid, pid), team = stats(sid), fr = n => String(n).replace('.', ',');
+  let h = '<div class="tiles t3 icotiles">' +
+    '<div class="tile"><span class="ti" style="background:#22304A">' + SI.pitch + '</span><b>' + st.mj + '</b><span>' + (st.mj > 1 ? 'matchs' : 'match') + '</span></div>' +
+    '<div class="tile"><span class="ti big">' + IC_BALL + '</span><b style="color:var(--c2)">' + st.b + '</b><span>' + (st.b > 1 ? 'buts' : 'but') + '</span></div>' +
+    '<div class="tile"><span class="ti big">' + IC_BOOT + '</span><b>' + st.pd + '</b><span>' + (st.pd > 1 ? 'passes D' : 'passe D') + '</span></div>' +
+    '<div class="tile"><span class="ti" style="background:#173326">' + SI.star + '</span><b style="color:var(--win)">' + st.v + '</b><span>' + (st.v > 1 ? 'victoires' : 'victoire') + '</span></div>' +
+    '<div class="tile"><span class="ti" style="background:#3A2A12">' + SI.target + '</span><b>' + (st.mj ? fr((st.b / st.mj).toFixed(1)) : '0') + '</b><span>but / match</span></div>' +
+    '<div class="tile"><span class="ti" style="background:#3A1A1A">' + SI.flame + '</span><b>' + (st.b + st.pd) + '</b><span>buts + passes</span></div></div>';
+  h += '<div class="rings">' +
+    ring(st.mj ? st.v / st.mj * 100 : 0, 'var(--win)', SI.star, (st.mj ? Math.round(st.v / st.mj * 100) : 0) + '%', 'victoires<br>quand il joue') +
+    ring(st.bp ? st.b / st.bp * 100 : 0, 'var(--c2)', IC_BALL, (st.bp ? Math.round(st.b / st.bp * 100) : 0) + '%', 'des buts<br>de l\'équipe') +
+    ring(team.mj ? st.mj / team.mj * 100 : 0, '#6FB3FF', SI.pitch, st.mj + '/' + team.mj, 'matchs joués<br>' + (sid === '*' ? 'en carrière' : 'sur la saison')) + '</div>';
+  EXPL = exploits(pid, sid);
+  if (EXPL.length) h += '<p class="lbl">Ses exploits</p><div class="expl">' + EXPL.map((x, i) => '<button type="button" data-a="exploit" data-i="' + i + '"><span class="ei">' + SI[x.ic] + '</span><b>' + esc(x.t) + '</b><span>' + esc(x.s) + '</span></button>').join('') + '</div>';
+  return h;
+}
+const HEAD_IC = '<span class="c" title="Matchs joués"><span class="hi">' + SI.pitch + '</span></span><span class="c" title="Buts"><span class="hi">' + IC_BALL + '</span></span><span class="c" title="Passes décisives"><span class="hi">' + IC_BOOT + '</span></span>';
 function detailStats(pid, sid) {
-  const ss = seasons();
-  let h = '<div class="scroll-x">' + ss.map(s => '<button type="button" class="chip' + (s.id === sid ? ' on' : '') + '" data-a="fSeason" data-id="' + s.id + '">' + esc(s.libelle) + '</button>').join('') + '<button type="button" class="chip' + (sid === '*' ? ' on' : '') + '" data-a="fSeason" data-id="*">Carrière</button></div>';
-  const st = stats(sid, pid), tot = st.b || 1;
-  h += '<div class="card" style="gap:0"><div class="tbl"><div class="tr th"><span style="flex:1">Par type de rencontre</span><span class="c">MJ</span><span class="c">B</span><span class="c">PD</span></div>';
+  const ss = seasons(), st = stats(sid, pid), tot = st.b || 1;
+  let h = '<div class="card" style="gap:0"><div class="tbl"><div class="tr th"><span style="flex:1">Où il marque</span>' + HEAD_IC + '</div>';
   ['amical', 'plateau', 'tournoi'].forEach(k => {
     const T = st.type[k];
-    h += '<div class="tr"><div style="flex:1;display:flex;flex-direction:column;gap:5px;padding:6px 0"><span class="badge t-' + k + '" style="align-self:flex-start">' + { amical: 'Amicaux', plateau: 'Plateaux', tournoi: 'Tournois' }[k] + ' · ' + T.ev + '</span><div class="bar" style="width:' + Math.round(T.b / tot * 100) + '%"></div></div><span class="c">' + T.mj + '</span><span class="c" style="color:var(--c2)">' + T.b + '</span><span class="c">' + T.pd + '</span></div>';
+    h += '<div class="tr"><div style="flex:1;display:flex;flex-direction:column;gap:6px;padding:8px 0;min-width:0"><div style="display:flex;align-items:center;gap:8px"><span class="hi">' + SI[k] + '</span><b style="font-size:15px">' + { amical: 'Amicaux', plateau: 'Plateaux', tournoi: 'Tournois' }[k] + '</b><span class="mu">· ' + T.ev + '</span></div><div class="bar2"><div style="width:' + Math.round(T.b / tot * 100) + '%;background:' + TYPE_COL[k] + '"></div></div></div><span class="c">' + T.mj + '</span><span class="c" style="color:var(--c2)">' + T.b + '</span><span class="c">' + T.pd + '</span></div>';
   });
-  h += '<div class="tr"><span style="flex:1;font-weight:700">Total</span><span class="c">' + st.mj + '</span><span class="c" style="color:var(--c2)">' + st.b + '</span><span class="c">' + st.pd + '</span></div></div><p class="mu" style="padding-top:6px">Barre = part des buts</p></div>';
-  h += '<div class="card" style="gap:0"><div class="tbl"><div class="tr th"><span style="flex:1">Par saison</span><span class="c">MJ</span><span class="c">B</span><span class="c">PD</span></div>';
+  h += '<div class="tr"><span style="flex:1;font-weight:800">Total</span><span class="c">' + st.mj + '</span><span class="c" style="color:var(--c2)">' + st.b + '</span><span class="c">' + st.pd + '</span></div></div><p class="mu" style="padding-top:6px">Barre = part de ses buts</p></div>';
+  h += '<div class="card" style="gap:0"><div class="tbl"><div class="tr th"><span style="flex:1">Par saison</span>' + HEAD_IC + '</div>';
   ss.forEach(s => {
     const x = stats(s.id, pid), lg = imgData(s.logo);
     h += '<div class="tr">' + (lg ? '<img src="' + lg + '" alt="" style="width:30px;height:30px;object-fit:contain">' : '<span class="sw" style="background:' + esc(s.couleur1) + '"></span>') + '<div style="flex:1;min-width:0"><div style="font-weight:700">' + esc(s.libelle) + '</div><p class="mu">' + esc([s.club, s.categorie].filter(Boolean).join(' · ')) + (s.statut === 'archivee' ? '' : ' · en cours') + '</p></div><span class="c">' + x.mj + '</span><span class="c" style="color:var(--c2)">' + x.b + '</span><span class="c">' + x.pd + '</span></div>';
@@ -105,6 +177,16 @@ ACT.photoNew = async () => {
     photoEditor();
   } catch (e) { toast('Impossible de lire cette image.'); }
 };
+/* V2 : un parent propose une photo pour son enfant (l'organisateur valide) */
+ACT.propPhoto = async () => {
+  const pid = cur().p.pid; if (!myKids().includes(pid)) return;
+  const f = await pickFile(); if (!f) return;
+  try {
+    const data = await shrinkPhoto(await readFile(f), 1100);
+    PE = { pid, data, img: await loadImage(data), cadre: { zoom: 1, ox: 0, oy: 0 }, isNew: true, prop: true };
+    photoEditor();
+  } catch (e) { toast('Impossible de lire cette image.'); }
+};
 ACT.photoEdit = async () => {
   const p = player(cur().p.pid), d = imgData(p.photo); if (!d) return toast('Photo en cours de chargement…');
   PE = { pid: p.id, data: d, img: await loadImage(d), cadre: Object.assign({ zoom: 1, ox: 0, oy: 0 }, p.photoCadre || {}), isNew: false };
@@ -112,7 +194,7 @@ ACT.photoEdit = async () => {
 };
 function photoEditor() {
   const s = Math.min(.78, (Math.min(window.innerWidth, 520) - 60) / PFT_CARDS.W);
-  openSheet('<h2>Photo de la carte</h2><div class="photo-ed" style="display:flex;flex-direction:column;gap:12px"><canvas id="peCv" style="width:' + Math.round(PFT_CARDS.W * s) + 'px;height:' + Math.round(PFT_CARDS.H * s) + 'px"></canvas>' +
+  openSheet('<h2>' + (PE.prop ? 'Proposer une photo' : 'Photo de la carte') + '</h2><div class="photo-ed" style="display:flex;flex-direction:column;gap:12px"><canvas id="peCv" style="width:' + Math.round(PFT_CARDS.W * s) + 'px;height:' + Math.round(PFT_CARDS.H * s) + 'px"></canvas>' +
     '<label class="flab" for="peZ">Zoom</label><input id="peZ" class="range" type="range" min="1" max="3" step="0.01" value="' + PE.cadre.zoom + '"><p class="mu" style="text-align:center">Fais glisser la photo pour la placer.</p></div>' +
     '<div class="row">' + (PE.isNew ? '' : '<button type="button" class="btn2 danger" id="peDel" style="flex:none;width:auto">' + ICON.trash + '</button>') + '<button type="button" class="btn2" data-a="sheetClose">Annuler</button><button type="button" class="btn" id="peOk">Enregistrer</button></div>');
   const cv = $('#peCv'), dpr = Math.min(3, window.devicePixelRatio || 1);
@@ -124,6 +206,11 @@ function photoEditor() {
   cv.onpointermove = e => { if (!drag) return; PE.cadre.ox = drag.ox + (e.clientX - drag.x) / s; PE.cadre.oy = drag.oy + (e.clientY - drag.y) / s; draw(); };
   cv.onpointerup = cv.onpointercancel = () => { drag = null; };
   $('#peOk').onclick = () => {
+    if (PE.prop) {
+      const c = { zoom: +PE.cadre.zoom.toFixed(3), ox: Math.round(PE.cadre.ox), oy: Math.round(PE.cadre.oy) }, img = uid('IMG');
+      commit([{ op: 'img', id: img, data: PE.data, type: 'proposition' }, put('Propositions', { id: uid('PR'), joueur: PE.pid, parent: ME.id, image: img, cadre: c, statut: 'attente', creeLe: nowIso() })]);
+      PE = null; closeSheet(); toast('Photo envoyée : l\'organisateur va la valider'); return;
+    }
     const ops = [], p = player(PE.pid), c = { zoom: +PE.cadre.zoom.toFixed(3), ox: Math.round(PE.cadre.ox), oy: Math.round(PE.cadre.oy) };
     let photo = p.photo;
     if (PE.isNew) { photo = uid('IMG'); ops.push({ op: 'img', id: photo, data: PE.data, type: 'photo' }); if (p.photo) ops.push(del('Images', p.photo)); }
@@ -183,6 +270,7 @@ ACT.palSeason = (el, d) => { NAV = [{ s: 'list', p: { sid: d.id } }]; render(); 
 
 /* ---------- réglages ---------- */
 SCREENS.settings = () => {
+  if (isParent()) return parentSettings();
   const S = curSeason(), lg = imgData(S.logo), st = stats(S.id);
   let h = topBar('Réglages', 'Dans la Lucarne · version ' + VERSION_APP, { logo: false });
   h += '<div class="main">';
@@ -194,7 +282,12 @@ SCREENS.settings = () => {
     (REJECTED.length ? '<div style="background:#2A1416;border:1px solid #5A2A2A;border-radius:12px;padding:10px 12px"><b style="color:#FF8F86">' + REJECTED.length + ' modification(s) refusée(s) par le Google Sheet</b><p class="mu">' + esc(REJECTED[REJECTED.length - 1].err) + '</p><div class="row" style="margin-top:8px"><button type="button" class="btn2" data-a="rejRetry">Réessayer</button><button type="button" class="btn2" data-a="rejDrop">Ignorer</button></div></div>' : '') +
     '<button type="button" class="btn2" data-a="diag">Tester la connexion</button>' +
     (SYNC.sheetUrl ? '<a class="btn2" href="' + esc(SYNC.sheetUrl) + '" target="_blank" rel="noopener">Ouvrir le Google Sheet</a>' : '') +
-    (CFG_CODE ? '' : '<button type="button" class="btn2" data-a="changeCode">Changer le code d\'accès</button>') + '</div>';
+    '</div>';
+  /* V2 : parents et photos proposées */
+  const P = rows('Parents'), nProp = rows('Propositions').filter(x => x.statut === 'attente').length;
+  h += '<div class="card"><p class="lbl">Parents (consultation)</p><p class="mu">' + (P.length ? P.length + ' parent' + (P.length > 1 ? 's' : '') + ' · ' + P.filter(x => x.appareils > 0 && x.actif !== 'non').length + ' connecté' + (P.filter(x => x.appareils > 0).length > 1 ? 's' : '') : 'Invite les parents : chacun reçoit son propre lien, sans code à taper.') + '</p><button type="button" class="btn" data-a="go" data-s="parents">Gérer les parents</button>' +
+    (nProp ? '<button type="button" class="btn2" data-a="go" data-s="props" style="color:#FFC46B">' + nProp + ' photo' + (nProp > 1 ? 's proposées' : ' proposée') + ' à valider</button>' : '') + '</div>';
+  h += '<div class="card"><p class="lbl">Ce téléphone</p><p class="mu">Connecté en administrateur' + (ME && ME.nom && ME.id ? ' (' + esc(ME.nom) + ')' : '') + '.</p><button type="button" class="btn2" data-a="accOut">Se déconnecter de ce téléphone</button></div>';
   h += '</div>';
   return { html: h, tab: 'settings' };
 };
@@ -214,6 +307,177 @@ ACT.diag = async () => {
   openSheet('<h2>' + (ok ? 'Connexion OK' : 'Connexion impossible') + '</h2><div class="tbl">' + lines.map(l => '<div class="tr"><span class="mu" style="flex:1">' + esc(l[0]) + '</span><span style="font-weight:700;text-align:right;max-width:60%">' + esc(l[1]) + '</span></div>').join('') + '</div><button type="button" class="btn" data-a="sheetClose">Fermer</button>');
   if (ok && OUTBOX.length) flushSoon(50);
 };
+/* ---------- V2 : réglages d'un parent ---------- */
+function parentSettings() {
+  const S = curSeason(), kids = myKids();
+  let h = topBar('Réglages', 'Dans la Lucarne · version ' + VERSION_APP, { logo: false });
+  h += '<div class="main">';
+  if (!isStandalone()) h += installCard(false);
+  h += '<div class="card"><p class="lbl">' + (kids.length > 1 ? 'Mes enfants' : 'Mon enfant') + '</p>' + (kids.length ? kids.map(k => '<button type="button" class="it" data-a="kidSwitch" data-id="' + k + '"><span class="grow" style="font-weight:700">' + esc(pname(k)) + '</span>' + (k === suiviId() ? '<span style="color:var(--c2);font-weight:700">Affiché</span>' : '<span class="mu">Afficher</span>') + '</button>').join('') : '<p class="mu">Pas encore choisi.</p>') +
+    '<button type="button" class="btn2" data-a="go" data-s="welcome">' + (kids.length ? 'Modifier' : 'Choisir mon enfant') + '</button></div>';
+  h += '<div class="card"><p class="lbl">Accès</p><p class="mu">Tu consultes l\'appli de ' + esc(S.club || 'l\'équipe') + ' avec ton lien personnel' + (ME && ME.nom ? ' (' + esc(ME.nom) + ')' : '') + '. Ne le transfère pas : il ne marche que sur 2 téléphones.</p><div class="row"><span id="syncDot" class="syncdot ' + syncState() + '"></span><p class="mu" id="syncTxt" style="flex:1">' + esc(syncText()) + '</p></div><button type="button" class="btn2" data-a="diag">Tester la connexion</button></div>';
+  h += '</div>';
+  return { html: h, tab: 'settings' };
+}
+ACT.kidSwitch = (el, d) => { LS.set('kid', d.id); render(); };
+ACT.accOut = async () => {
+  if (!await confirmBox('Se déconnecter ?', 'Ce téléphone oubliera le code administrateur. Il faudra le retaper pour revenir.', 'Se déconnecter', true)) { render(); return; }
+  CODE = ''; LS.del('code'); ME = null; LS.del('me'); NAV = [{ s: 'acces', p: {} }]; render();
+};
+
+/* ---------- V2 : écran d'accès (gris neutre, rien du club n'est affiché) ---------- */
+SCREENS.acces = () => {
+  const msg = { lien: ['Lien déjà utilisé', 'Ce lien personnel sert déjà sur 2 téléphones. Demande ton propre lien à l\'organisateur.'], coupe: ['Accès coupé', 'Ton accès a été coupé par l\'organisateur. Les données ont été effacées de ce téléphone.'], code: ['Code refusé', 'Le code administrateur a changé ou n\'est pas le bon.'], bloque: ['Trop d\'essais', 'Le code administrateur est bloqué 15 minutes. Réessaie plus tard.'] }[ACCESS_MSG];
+  let h = '<div class="main" style="padding-top:40px;gap:16px"><div style="display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center"><img src="icons/icon-192.png" alt="" style="width:84px;height:84px;border-radius:20px"><div class="cd" style="font-size:30px">Dans la Lucarne</div></div>';
+  if (msg) h += '<div class="card" style="text-align:center;border:1px solid var(--line)"><b style="font-size:18px">' + msg[0] + '</b><p class="mu">' + msg[1] + '</p></div>';
+  h += '<div class="card"><p class="lbl">Tu as reçu un lien ?</p><p class="mu">Ouvre simplement le lien reçu sur WhatsApp. Si l\'appli installée ne s\'ouvre pas avec ton accès (iPhone), copie le lien puis :</p><button type="button" class="btn" data-a="accPaste">Coller mon lien</button><div class="field"><label for="accL">ou colle-le ici</label><input id="accL" class="inp" autocomplete="off" placeholder="https://…#cle=…"></div><button type="button" class="btn2" data-a="accLink">Valider le lien</button></div>';
+  h += '<div class="card"><p class="lbl">Organisateur</p><div class="field"><label for="accC">Code administrateur</label><div class="row"><input id="accC" class="inp" type="password" autocomplete="off" style="flex:1;color:#121315;background:#F1F1F2"><button type="button" class="btn2" data-a="accEye" style="flex:none;width:auto" aria-label="Afficher le code">👁</button></div></div><button type="button" class="btn2" data-a="accAdmin">Entrer</button></div>';
+  h += '</div>';
+  return { html: h, neutral: true };
+};
+function useLink(txt) {
+  const m = /cle=([A-Za-z0-9]{64})/.exec(String(txt || ''));
+  if (!m) return toast('Ce n\'est pas un lien d\'accès Dans la Lucarne.');
+  wipeLocal(); CODE = m[1]; LS.set('code', CODE); ACCESS_MSG = ''; SYNC.first = false;
+  NAV = [{ s: 'home', p: {} }]; render(); flush();
+}
+ACT.accPaste = async () => { try { useLink(await navigator.clipboard.readText()); } catch (e) { toast('Colle le lien dans la case en dessous.'); } };
+ACT.accLink = () => useLink($('#accL').value);
+ACT.accEye = () => { const i = $('#accC'); i.type = i.type === 'password' ? 'text' : 'password'; };
+ACT.accAdmin = async () => {
+  const c = $('#accC').value.trim(); if (!c) return toast('Tape le code administrateur.');
+  try {
+    const r = await api('ping', [c]);
+    if (!r.moi || r.moi.role !== 'admin') return toast('Ce code n\'est pas un code administrateur.');
+    CODE = c; LS.set('code', c); ME = r.moi; LS.set('me', ME); ACCESS_MSG = ''; SYNC.error = ''; SYNC.kind = ''; SYNC.first = false;
+    NAV = [{ s: 'home', p: {} }]; render(); flush();
+  } catch (e) { toast(e.acc === 'BLOQUE' ? 'Trop d\'essais : code bloqué 15 minutes.' : e.badCode ? 'Code refusé.' : e.message); }
+};
+
+/* ---------- V2 : « C'est mon fils » ---------- */
+let KID = '';
+SCREENS.welcome = () => {
+  const R = roster(), kids = myKids();
+  let h = '<div class="welcome-top"><div class="cd" style="font-size:30px">Bienvenue' + (ME && ME.nom ? ' ' + esc(ME.nom) : '') + ' !</div><p>' + (kids.length ? 'Touche la carte d\'un enfant pour l\'ajouter ou le retirer (2 au maximum).' : 'Touche la carte de ton enfant.') + '</p></div><div class="main">';
+  h += '<div class="cards-grid">' + R.map(p => '<button type="button" data-a="kidPick" data-id="' + p.id + '" class="' + (KID === p.id ? 'kid-sel' : kids.includes(p.id) ? 'kid-on' : '') + '">' + cardCv(p.id, .29) + '</button>').join('') + '</div>';
+  if (KID) {
+    const has = kids.includes(KID);
+    h += '<div class="card kid-panel"><b style="font-size:17px">' + esc(pname(KID)) + (has ? ' n\'est pas ton enfant ?' : ' est ton enfant ?') + '</b><button type="button" class="btn" data-a="kidOk">' + (has ? 'Ce n\'est pas mon fils' : 'C\'est mon fils') + '</button><p class="mu">L\'organisateur le voit et peut corriger si besoin.</p></div>';
+  }
+  if (kids.length) h += '<button type="button" class="btn2" data-a="home">Terminé</button>';
+  if (!isStandalone()) h += installCard(false);
+  h += '</div>';
+  return { html: h };
+};
+ACT.kidPick = (el, d) => { KID = KID === d.id ? '' : d.id; render(); };
+function setKids(list) {
+  if (!ME || !ME.id) return toast('Accès en cours de vérification, réessaie dans un instant.');
+  commit([put('Parents', { id: ME.id, enfants: list })]);
+  ME.enfants = list; LS.set('me', ME);
+}
+ACT.kidOk = () => {
+  const k = myKids();
+  if (k.includes(KID)) setKids(k.filter(x => x !== KID));
+  else { if (k.length >= 2) return toast('2 enfants au maximum.'); setKids(k.concat(KID)); LS.set('kid', KID); }
+  KID = ''; if (myKids().length) NAV = [{ s: 'home', p: {} }]; render();
+};
+ACT.kidAdd = () => { const k = myKids(), id = cur().p.pid; if (k.length >= 2 || k.includes(id)) return; setKids(k.concat(id)); LS.set('kid', id); toast(pname(id) + ' ajouté : c\'est ton fils'); render(); };
+ACT.kidDel = async () => { const id = cur().p.pid; if (!await confirmBox('Ce n\'est pas ton fils ?', pname(id) + ' sera retiré de tes enfants.', 'Retirer')) { render(); return; } setKids(myKids().filter(x => x !== id)); render(); };
+
+/* ---------- V2 : parents (organisateur) ---------- */
+SCREENS.parents = () => {
+  const P = rows('Parents').sort((a, b) => String(a.nom).localeCompare(b.nom));
+  let h = topBar('Parents', 'Accès en consultation · ' + P.length + ' parent' + (P.length > 1 ? 's' : ''), { back: true });
+  h += '<div class="main"><p class="mu">Chaque parent reçoit son propre lien : il voit tout mais ne peut rien modifier (sauf choisir son enfant et proposer une photo). Un lien marche sur 2 téléphones au maximum.</p>';
+  P.forEach(x => {
+    const kids = (x.enfants || []).map(pname).join(' et '), off = x.actif === 'non';
+    h += '<div class="card par' + (off ? ' off' : '') + '"><div class="lbl-row"><div><b style="font-size:17px">' + esc(x.nom) + '</b>' + (x.admin === 'oui' ? ' <span class="badge" style="background:var(--c2);color:var(--on2)">Admin</span>' : '') + '<p class="mu">' + (kids ? 'Parent de <b style="color:var(--c2)">' + esc(kids) + '</b>' : 'Enfant pas encore choisi') + '</p></div><span class="mu" style="font-weight:700;white-space:nowrap">' + (off ? 'Accès coupé' : x.lien ? (x.appareils || 0) + ' / 2 tél.' : 'Pas de lien') + '</span></div>' +
+      (off ? '<button type="button" class="btn2" data-a="pAcc" data-id="' + x.id + '" data-k="retablir">Rétablir (nouveau lien)</button>' :
+        '<div class="row"><button type="button" class="btn wa" data-a="pSend" data-id="' + x.id + '">' + (x.lien ? 'Renvoyer son lien' : 'Envoyer son lien') + '</button><button type="button" class="btn2 danger" data-a="pAcc" data-id="' + x.id + '" data-k="couper" style="flex:none;width:auto">Couper</button></div>') +
+      '<div class="row"><button type="button" class="chip" data-a="pKids" data-id="' + x.id + '">Enfants</button><button type="button" class="chip" data-a="pAcc" data-id="' + x.id + '" data-k="nouveau">Nouveau lien</button><button type="button" class="chip" data-a="pAdm" data-id="' + x.id + '">' + (x.admin === 'oui' ? 'Retirer admin' : 'Administrateur') + '</button><button type="button" class="chip" data-a="pDel" data-id="' + x.id + '">' + ICON.trash + '</button></div></div>';
+  });
+  h += '<button type="button" class="btn2 dash" data-a="pAdd">' + ICON.plus + 'Ajouter un parent</button></div>';
+  return { html: h };
+};
+ACT.pAdd = () => {
+  openSheet('<h2>Nouveau parent</h2><div class="field"><label for="paN">Prénom</label><input id="paN" class="inp" autocomplete="off"></div><div class="row"><button type="button" class="btn2" data-a="sheetClose">Annuler</button><button type="button" class="btn" id="paOk">Ajouter</button></div>');
+  $('#paN').focus();
+  $('#paOk').onclick = () => { const n = $('#paN').value.trim(); if (!n) return toast('Indique le prénom.'); commit([put('Parents', { id: uid('PA'), nom: n, actif: 'oui', admin: 'non', enfants: [], creeLe: nowIso() })]); closeSheet(); toast(n + ' ajouté : envoie-lui son lien'); };
+};
+async function parentApi(id, action) {
+  if (OUTBOX.length) { await flush(); if (OUTBOX.length) await new Promise(r => setTimeout(r, 1500)); }
+  return api('acces', [CODE, id, action]);
+}
+const appUrl = () => location.origin + location.pathname.replace(/index\.html$/, '');
+ACT.pSend = async (el, d) => {
+  const x = DB.Parents[d.id]; if (!x) return;
+  openSheet('<h2>Lien de ' + esc(x.nom) + '</h2><div class="card" style="align-items:center"><div class="spin"></div><p class="mu">Préparation du lien…</p></div>');
+  let r; try { r = await parentApi(x.id, 'lien'); } catch (e) { closeSheet(); return toast(e.message); }
+  const S = curSeason() || {};
+  const msg = 'Salut ' + x.nom + ' ! Voici ton accès à *Dans la Lucarne*, l\'appli des matchs de l\'équipe ' + (S.club || '') + ' ' + (S.categorie || '') + '.\nOuvre ce lien sur ton téléphone, puis appuie sur « Installer » :\n' + appUrl() + '#cle=' + r.jeton + '\n\nCe lien est personnel (il ne marche que sur 2 téléphones), ne le transfère pas.';
+  openSheet('<h2>Lien de ' + esc(x.nom) + '</h2><div class="wa-msg">' + esc(msg).replace(/\n/g, '<br>') + '</div><a class="btn wa" href="https://wa.me/?text=' + encodeURIComponent(msg) + '" target="_blank" rel="noopener">Envoyer sur WhatsApp</a><button type="button" class="btn2" id="paCopy">Copier le message</button><button type="button" class="btn2" data-a="sheetClose">Fermer</button>');
+  $('#paCopy').onclick = async () => { try { await navigator.clipboard.writeText(msg); toast('Message copié'); } catch (e) { toast('Copie impossible'); } };
+};
+ACT.pAcc = async (el, d) => {
+  const x = DB.Parents[d.id]; if (!x) return;
+  const txt = { couper: ['Couper l\'accès de ' + x.nom + ' ?', 'Son lien ne marchera plus et ses téléphones effaceront les données de l\'appli.', 'Couper l\'accès'], nouveau: ['Nouveau lien pour ' + x.nom + ' ?', 'L\'ancien lien ne marchera plus (téléphone perdu, lien transféré…). Il faudra lui envoyer le nouveau.', 'Nouveau lien'], retablir: ['Rétablir ' + x.nom + ' ?', 'Un nouveau lien sera créé : envoie-le-lui ensuite.', 'Rétablir'] }[d.k];
+  if (!await confirmBox(txt[0], txt[1], txt[2], d.k === 'couper')) { render(); return; }
+  try { await parentApi(x.id, d.k); toast(d.k === 'couper' ? 'Accès coupé' : 'Nouveau lien prêt : envoie-le'); flush(); } catch (e) { toast(e.message); }
+};
+ACT.pAdm = async (el, d) => {
+  const x = DB.Parents[d.id]; if (!x) return; const on = x.admin !== 'oui';
+  if (on && !await confirmBox(x.nom + ' administrateur ?', x.nom + ' pourra tout modifier comme toi (rencontres, buts, effectif, parents).', 'Oui, administrateur')) { render(); return; }
+  commit([put('Parents', { id: x.id, admin: on ? 'oui' : 'non' })]); render();
+};
+ACT.pDel = async (el, d) => {
+  const x = DB.Parents[d.id]; if (!x) return;
+  if (!await confirmBox('Supprimer ' + x.nom + ' ?', 'Son accès est coupé définitivement.', 'Supprimer', true)) { render(); return; }
+  try { await parentApi(x.id, 'couper'); } catch (e) {}
+  commit([del('Parents', x.id)]); render();
+};
+ACT.pKids = (el, d) => {
+  const x = DB.Parents[d.id]; if (!x) return; const sel = new Set(x.enfants || []);
+  openSheet('<h2>Enfants de ' + esc(x.nom) + '</h2><div style="display:flex;flex-direction:column;gap:6px">' + roster().map(p => '<label class="row" style="min-height:44px;font-weight:600"><input type="checkbox" value="' + p.id + '"' + (sel.has(p.id) ? ' checked' : '') + ' style="width:22px;height:22px;accent-color:var(--c2)">' + esc(p.nom) + '</label>').join('') + '</div><div class="row"><button type="button" class="btn2" data-a="sheetClose">Annuler</button><button type="button" class="btn" id="pkOk">Enregistrer</button></div>');
+  $('#pkOk').onclick = () => { const l = $$('#sheet input:checked').map(i => i.value).slice(0, 2); commit([put('Parents', { id: x.id, enfants: l })]); closeSheet(); };
+};
+
+/* ---------- V2 : photos proposées par les parents ---------- */
+SCREENS.props = () => {
+  const L = rows('Propositions').filter(x => x.statut === 'attente').sort((a, b) => String(a.creeLe).localeCompare(b.creeLe));
+  let h = topBar('Photos proposées', L.length ? L.length + ' à valider' : 'Rien à valider', { back: true }) + '<div class="main">';
+  if (!L.length) h += '<div class="empty">Aucune photo en attente.</div>';
+  L.forEach(x => {
+    h += '<div class="card"><p class="mu">Par ' + esc((DB.Parents[x.parent] || {}).nom || 'un parent') + ' pour <b style="color:var(--c2)">' + esc(pname(x.joueur)) + '</b> · ' + esc(fdate(String(x.creeLe).slice(0, 10))) + '</p><div class="row" style="justify-content:center;align-items:flex-end;gap:14px"><div style="display:flex;flex-direction:column;align-items:center;gap:6px"><span class="mu">Actuelle</span>' + cardCv(x.joueur, .3) + '</div><div style="display:flex;flex-direction:column;align-items:center;gap:6px"><span style="color:var(--c2);font-weight:700;font-size:12px">PROPOSÉE</span><canvas class="prop-cv" data-id="' + x.id + '" style="width:' + Math.round(PFT_CARDS.W * .36) + 'px;height:' + Math.round(PFT_CARDS.H * .36) + 'px"></canvas></div></div>' +
+      '<div class="row"><button type="button" class="btn" style="background:var(--win);color:#08311A" data-a="propOk" data-id="' + x.id + '">Accepter</button><button type="button" class="btn2 danger" data-a="propNo" data-id="' + x.id + '">Refuser</button></div></div>';
+  });
+  h += '</div>';
+  return { html: h, after: paintProps };
+};
+function paintProps() {
+  const dpr = Math.min(3, window.devicePixelRatio || 1);
+  $$('canvas.prop-cv').forEach(cv => {
+    const x = DB.Propositions[cv.dataset.id]; if (!x) return;
+    const d = cardData(x.joueur, false), im = imgEl(x.image); d.photoImg = im; d.cadre = x.cadre;
+    try { PFT_CARDS.drawCard(cv, d, .36 * dpr); } catch (e) {}
+  });
+}
+ACT.propOk = (el, d) => {
+  const x = DB.Propositions[d.id]; if (!x) return; const p = player(x.joueur);
+  const ops = [put('Joueurs', { id: x.joueur, photo: x.image, photoCadre: x.cadre }), put('Propositions', { id: x.id, statut: 'acceptee' })];
+  if (p && p.photo && p.photo !== x.image) ops.push(del('Images', p.photo));
+  commit(ops); toast('Photo acceptée'); render();
+};
+ACT.propNo = (el, d) => { const x = DB.Propositions[d.id]; if (!x) return; commit([put('Propositions', { id: x.id, statut: 'refusee' }), del('Images', x.image)]); toast('Photo refusée'); render(); };
+
+/* consultation : les boutons de modification sont cachés (et bloqués) chez les parents */
+(function roStyle() {
+  const hide = Object.keys(ACT).filter(k => !RO_OK.has(k) && k !== 'lEdit').map(k => '.ro [data-a="' + k + '"]');
+  hide.push('.ro [data-s="setup"]', '.ro [data-s="endSeason"]', '.ro [data-s="compo"]', '.ro [data-s="new"]', '.ro [data-s="parents"]', '.ro [data-s="props"]');
+  const st = document.createElement('style');
+  st.textContent = hide.join(',') + '{display:none!important}.ro [data-a="lEdit"]{pointer-events:none}';
+  document.head.appendChild(st);
+})();
+
 ACT.changeCode = () => {
   openSheet('<h2>Code d\'accès</h2><p class="mu">Le code choisi dans le script Google (CODE_ACCES).</p><div class="field"><label for="ccC">Code</label><input id="ccC" class="inp" inputmode="numeric" value="' + esc(CODE) + '"></div><div class="row"><button type="button" class="btn2" data-a="sheetClose">Annuler</button><button type="button" class="btn" id="ccOk">Enregistrer</button></div>');
   $('#ccOk').onclick = async () => { const c = $('#ccC').value.trim(); try { await api('ping', [c]); CODE = c; LS.set('code', c); SYNC.error = ''; closeSheet(); flush(); toast('Code enregistré'); } catch (e) { toast(e.badCode ? 'Code refusé.' : e.message); } };

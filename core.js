@@ -1,8 +1,8 @@
 /* Dans la Lucarne : données, synchronisation avec le Google Sheet, outils communs */
 'use strict';
-const VERSION_APP = '1.4';
+const VERSION_APP = '2.0';
 const API_URL = ((window.PFT_CONFIG || {}).apiUrl || '').trim();
-const TABLES = ['Reglages', 'Saisons', 'Joueurs', 'Rencontres', 'Matchs', 'Buts', 'Images'];
+const TABLES = ['Reglages', 'Saisons', 'Joueurs', 'Rencontres', 'Matchs', 'Buts', 'Images', 'Parents', 'Propositions'];
 
 const LS = {
   get(k, d) { try { const v = localStorage.getItem('pft:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
@@ -27,8 +27,30 @@ let OUTBOX = LS.get('outbox', []);
 let GONE = LS.get('deleted', {});
 (() => { const lim = Date.now() - 30 * 864e5; let n = 0; for (const k in GONE) if (GONE[k] < lim) { delete GONE[k]; n++; } if (n) LS.set('deleted', GONE); })();
 const gone = (t, id) => !!GONE[t + ':' + id];
-const CFG_CODE = String((window.PFT_CONFIG || {}).code || '').trim();   // v1.2 : code d'accès écrit dans config.js (plus de saisie)
-let CODE = CFG_CODE || LS.get('code', '');
+/* V2 : plus aucun code dans config.js. Thomas tape une fois son code administrateur ; un parent ouvre son lien personnel
+   (…/#cle=<64 caractères>) : la clé est gardée sur le téléphone puis effacée de l'adresse. */
+const CFG_CODE = '';
+let CODE = LS.get('code', '');
+let ME = LS.get('me', null);             // {role:'admin'|'parent', id, nom, enfants} renvoyé par le script
+let ACCESS_MSG = '';                     // raison de l'écran « Accès » (lien déjà utilisé, accès coupé…)
+const DEV = LS.get('dev', '') || (() => { const d = 'D' + Date.now().toString(36) + Math.random().toString(36).slice(2, 12); LS.set('dev', d); return d; })();
+function wipeLocal() {
+  try { Object.keys(localStorage).filter(k => k.indexOf('pft:') === 0 && k !== 'pft:dev').forEach(k => localStorage.removeItem(k)); } catch (e) {}
+  SERVER = null; SERVER_STR = ''; OUTBOX = []; REJECTED = []; GONE = {}; ME = null; IMG.mem = {};
+  rebuildDb();
+}
+(function readLink() {
+  const m = /[#&?]cle=([A-Za-z0-9]{64})/.exec(location.hash + '&' + location.search);
+  if (!m) return;
+  if (CODE && CODE !== m[1]) { try { Object.keys(localStorage).filter(k => k.indexOf('pft:') === 0 && k !== 'pft:dev').forEach(k => localStorage.removeItem(k)); } catch (e) {} SERVER = null; OUTBOX = []; ME = null; }
+  CODE = m[1]; LS.set('code', CODE);
+  try { history.replaceState(null, '', location.pathname); } catch (e) {}
+})();
+const isParent = () => ME ? ME.role !== 'admin' : CODE.length === 64;
+const isAdmin = () => !isParent();
+/* actions permises en consultation (les autres sont cachées et bloquées ; le script refuse aussi) */
+const RO_OK = new Set(['back', 'home', 'go', 'fSeason', 'fTab', 'listFilter', 'listSeason', 'mTab', 'openEvent', 'openMatch', 'palSeason', 'palSort', 'palTSeason', 'shareImg', 'shareTxt', 'sheetClose', 'install', 'diag', 'exploit', 'exGo', 'kidPick', 'kidOk', 'kidAdd', 'kidDel', 'kidSwitch', 'propPhoto', 'accPaste', 'accLink', 'accAdmin', 'accEye', 'accOut']);
+const RO_SCREENS = new Set(['home', 'list', 'event', 'match', 'live', 'squad', 'fiche', 'palmares', 'settings', 'welcome', 'acces']);
 let SYNC = { busy: false, last: LS.get('lastSync', 0), error: '', sheetUrl: LS.get('sheetUrl', '') };
 
 function emptyDb() { const d = {}; TABLES.forEach(t => d[t] = {}); return d; }
@@ -68,6 +90,8 @@ function commit(ops) {
   flushSoon(700);
 }
 const put = (t, row) => ({ op: 'put', t, row });
+/* enfants du parent connecté (« C'est mon fils ») */
+function myKids() { const P = ME && ME.id ? DB.Parents[ME.id] : null; const k = (P && P.enfants) || (ME && ME.enfants) || []; return k.filter(id => DB.Joueurs[id]); }
 const del = (t, id) => ({ op: 'del', t, id });
 function saveOutbox() { if (!LS.set('outbox', OUTBOX.map(o => Object.assign({}, o, { sending: undefined })))) toast('Mémoire du téléphone pleine : synchronise dès que possible.'); }
 
@@ -78,7 +102,7 @@ async function api(fn, args, ms) {
   const timer = setTimeout(() => { try { ctl && ctl.abort(); } catch (e) {} }, ms || 25000);
   let r;
   try {
-    r = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ fn, args }), redirect: 'follow', signal: ctl ? ctl.signal : undefined });
+    r = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ fn, args, dev: DEV }), redirect: 'follow', signal: ctl ? ctl.signal : undefined });
   } catch (e) {
     clearTimeout(timer);
     if (e && e.name === 'AbortError') throw Object.assign(new Error('Le Google Sheet met trop de temps à répondre.'), { slow: true });
@@ -87,7 +111,7 @@ async function api(fn, args, ms) {
   let j;
   try { j = await r.json(); } catch (e) { clearTimeout(timer); throw Object.assign(new Error('Réponse inattendue de Google (script non déployé pour « Tout le monde » ?).'), { server: true }); }
   clearTimeout(timer);
-  if (!j.ok) throw Object.assign(new Error(j.error || 'Erreur du serveur.'), { badCode: j.code === 'CODE', busy: j.code === 'BUSY', server: true });
+  if (!j.ok) throw Object.assign(new Error(j.error || 'Erreur du serveur.'), { badCode: j.code === 'CODE' || j.code === 'LIEN' || j.code === 'BLOQUE', acc: j.code, busy: j.code === 'BUSY', server: true });
   return j.result;
 }
 
@@ -124,10 +148,12 @@ async function flush() {
     if (refused) LS.set('rejected', REJECTED);
     if (res.sheetUrl && res.sheetUrl !== SYNC.sheetUrl) { SYNC.sheetUrl = res.sheetUrl; LS.set('sheetUrl', res.sheetUrl); }
     SYNC.version = res.version || '1.1';
+    if (res.moi) { const was = JSON.stringify(ME); ME = res.moi; if (JSON.stringify(ME) !== was) { LS.set('me', ME); setTimeout(refresh, 0); } }
     const str = JSON.stringify(res.tables), changed = str !== SERVER_STR;
     if (batch.length) saveOutbox();
     SYNC.last = Date.now(); SYNC.error = refused ? 'Une modification a été refusée par le Google Sheet : ' + refused : ''; SYNC.kind = refused ? 'refus' : '';
     RETRY = 0; SYNC.busy = false; SYNC.first = true;
+    setTimeout(cleanOrphans, 800);
     if (!OUTBOX.length) SYNC.since = 0;
     if (changed) {
       /* données différentes de la copie locale : on les garde et on redessine l'écran */
@@ -142,6 +168,7 @@ async function flush() {
   } catch (e) {
     batch.forEach(o => o.sending = false);
     SYNC.busy = false; SYNC.first = true;
+    if (e.badCode) { accessLost(e.acc); return; }
     SYNC.kind = e.badCode ? 'code' : e.offline ? 'reseau' : e.slow ? 'lent' : e.busy ? 'occupe' : 'serveur';
     SYNC.error = e.badCode ? 'Code d\'accès refusé par le script Google.' : e.message;
     refreshStatus();
@@ -150,6 +177,29 @@ async function flush() {
   }
 }
 let SERVER_STR = SERVER ? JSON.stringify(SERVER) : '';
+/* V2 : accès refusé par le script (code changé, lien coupé, lien déjà utilisé sur 2 téléphones) */
+function accessLost(code) {
+  const parent = isParent();
+  ACCESS_MSG = code === 'LIEN' ? 'lien' : code === 'BLOQUE' ? 'bloque' : parent ? 'coupe' : 'code';
+  if (parent || code === 'LIEN') wipeLocal();   // un parent coupé ne garde rien sur son téléphone
+  CODE = ''; LS.del('code');
+  if (typeof NAV !== 'undefined') { NAV = [{ s: 'acces', p: {} }]; render(); }
+}
+/* v1.5 : restes d'anciennes suppressions (rencontre sans saison ni type, match sans rencontre, but sans match),
+   recréés autrefois par une modification restée en attente sur un téléphone. Ils sont supprimés pour de bon
+   (et notés dans l'onglet Supprimes, donc ils ne peuvent plus revenir). Seulement quand tout est envoyé et relu. */
+let ORPH_DONE = false;
+function cleanOrphans() {
+  if (ORPH_DONE || OUTBOX.length || !SERVER || !rows('Saisons').length || !isAdmin()) return;
+  ORPH_DONE = true;
+  const ops = [];
+  const evOk = e => DB.Saisons[e.saison] && TYPE_LBL[e.type];
+  rows('Rencontres').filter(e => !evOk(e)).forEach(e => ops.push(del('Rencontres', e.id)));
+  rows('Matchs').filter(m => !DB.Rencontres[m.rencontre] || !evOk(DB.Rencontres[m.rencontre])).forEach(m => ops.push(del('Matchs', m.id)));
+  const gone = new Set(ops.filter(o => o.t === 'Matchs').map(o => o.id));
+  rows('Buts').filter(g => !DB.Matchs[g.match] || gone.has(g.match)).forEach(g => ops.push(del('Buts', g.id)));
+  if (ops.length) { commit(ops); console.log('Nettoyage :', ops.length, 'reste(s) supprimé(s)'); }
+}
 function setupWake() { if (typeof NAV !== 'undefined' && NAV[NAV.length - 1].s === 'setup') refresh(); }
 /* met à jour seulement l'indicateur de synchronisation (sans redessiner l'écran) */
 function refreshStatus() {
@@ -171,11 +221,17 @@ function syncText() {
 }
 setInterval(() => { if (OUTBOX.length || SYNC.busy) refreshStatus(); }, 5000);
 /* synchronisation automatique : régulièrement quand l'appli est ouverte, et envoi de secours à la fermeture */
-setInterval(() => { if (document.visibilityState === 'visible' && API_URL && CODE && !SYNC.busy) flush(); }, 40000);
+let PULL_AT = Date.now();
+setInterval(() => {
+  if (document.visibilityState !== 'visible' || !API_URL || !CODE || SYNC.busy) return;
+  /* V2 : pendant un match en direct, les téléphones qui regardent (parents) se mettent à jour toutes les 12 s */
+  const live = isParent() && rows('Matchs').some(m => m.statut === 'en_cours');
+  if (Date.now() - PULL_AT >= (live ? 12000 : 40000)) { PULL_AT = Date.now(); flush(); }
+}, 4000);
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden' && API_URL && CODE && OUTBOX.length && navigator.sendBeacon) {
     /* les opérations sont rejouables sans risque : elles seront renvoyées normalement à la prochaine ouverture */
-    try { navigator.sendBeacon(API_URL, new Blob([JSON.stringify({ fn: 'sync', args: [CODE, OUTBOX.map(o => Object.assign({}, o, { sending: undefined }))] })], { type: 'text/plain;charset=utf-8' })); } catch (e) {}
+    try { navigator.sendBeacon(API_URL, new Blob([JSON.stringify({ fn: 'sync', args: [CODE, OUTBOX.map(o => Object.assign({}, o, { sending: undefined }))], dev: DEV })], { type: 'text/plain;charset=utf-8' })); } catch (e) {}
   }
 });
 /* rafraîchit l'écran sans casser une saisie en cours */
@@ -208,7 +264,7 @@ function imgEl(id) {
   const d = imgData(id); if (!d) return null;
   const k = id + ':' + d.length;
   let e = IMG.el[k];
-  if (!e) { e = IMG.el[k] = new Image(); e.onload = () => { paintCards(); if (typeof paintRecaps === 'function') paintRecaps(); }; e.src = d; }
+  if (!e) { e = IMG.el[k] = new Image(); e.onload = () => { paintCards(); if (typeof paintRecaps === 'function') paintRecaps(); if (typeof paintProps === 'function') paintProps(); }; e.src = d; }
   return e.complete && e.naturalWidth ? e : null;
 }
 function loadImage(src) { return new Promise((ok, ko) => { const i = new Image(); i.onload = () => ok(i); i.onerror = ko; i.src = src; }); }
@@ -247,7 +303,8 @@ function applyTheme() {
 const rows = t => Object.values(DB[t]);
 const reg = k => (DB.Reglages[k] || {}).valeur || '';
 const curSeason = () => DB.Saisons[reg('saison')] || null;
-const suiviId = () => reg('suivi');
+/* joueur suivi : Paul chez Thomas (réglage commun) ; chez un parent, son enfant (choisi sur ce téléphone s'il en a 2) */
+const suiviId = () => { if (isParent()) { const k = myKids(), c = LS.get('kid', ''); return k.includes(c) ? c : (k[0] || ''); } return reg('suivi'); };
 const player = id => DB.Joueurs[id] || null;
 const seasons = () => rows('Saisons').sort((a, b) => String(b.debut || '').localeCompare(String(a.debut || '')) || String(b.libelle).localeCompare(String(a.libelle)));
 /* index recalculés seulement quand les données changent */
@@ -316,7 +373,7 @@ function eventResult(e) {
 /* statistiques d'une saison (ou de toutes si sid = '*') ; pid = joueur (facultatif) */
 function stats(sid, pid) { return memo('st|' + sid + '|' + (pid || ''), () => stats_(sid, pid)); }
 function stats_(sid, pid) {
-  const evs = sid === '*' ? rows('Rencontres') : eventsOf(sid);
+  const evs = sid === '*' ? rows('Rencontres').filter(e => DB.Saisons[e.saison] && TYPE_LBL[e.type]) : eventsOf(sid);   // v1.5 : la carrière ne compte que les vraies rencontres (comme les saisons)
   const o = { mj: 0, v: 0, n: 0, d: 0, bp: 0, bc: 0, b: 0, pd: 0, ev: 0, type: { amical: z(), plateau: z(), tournoi: z() } };
   function z() { return { ev: 0, mj: 0, b: 0, pd: 0 }; }
   evs.forEach(e => {

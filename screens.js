@@ -18,14 +18,25 @@ window.addEventListener('popstate', () => {
 const SCREENS = {}, ACT = {};
 let LIVE_T = 0;
 function isConfigured() { return !!curSeason() && (!!CODE || !API_URL); }
+/* V2 : écran d'accès (pas de code ou lien), consultation pour les parents */
+function route() {
+  if (API_URL && !CODE) { if (cur().s !== 'acces') NAV = [{ s: 'acces', p: {} }]; return; }
+  if (isParent()) {
+    if (!RO_SCREENS.has(cur().s)) NAV = [{ s: 'home', p: {} }];
+    if (curSeason() && !myKids().length && SYNC.first && cur().s === 'home') NAV = [{ s: 'welcome', p: {} }];
+    return;
+  }
+  if (!isConfigured() && cur().s !== 'setup') NAV = [{ s: 'setup', p: {} }];
+}
 function render() {
   clearInterval(LIVE_T);
-  if (!isConfigured() && cur().s !== 'setup') NAV = [{ s: 'setup', p: {} }];
+  route();
   const c = cur();
   const fn = SCREENS[c.s] || SCREENS.home;
   let r;
   try { r = fn(c.p || {}); } catch (e) { console.error(e); r = { html: '<div class="main"><div class="empty">Écran indisponible : ' + esc(e.message) + '</div><button class="btn2" data-a="home">Retour à l\'accueil</button></div>', tab: 'home' }; }
   document.body.classList.toggle('neutral', !!r.neutral);
+  document.body.classList.toggle('ro', isParent());
   document.body.classList.toggle('notabs', !r.tab);
   applyTheme();
   $('#view').innerHTML = (r.neutral ? '' : netBanner()) + r.html;
@@ -43,6 +54,8 @@ function netBanner() {
 document.addEventListener('click', e => {
   const t = e.target.closest('[data-tab]'); if (t) { tab(t.dataset.tab); return; }
   const a = e.target.closest('[data-a]'); if (!a) return;
+  if (isParent() && !RO_OK.has(a.dataset.a)) { e.preventDefault(); return; }   // consultation seule
+  if (isParent() && a.dataset.a === 'go' && !RO_SCREENS.has(a.dataset.s)) { e.preventDefault(); return; }
   const f = ACT[a.dataset.a]; if (f) { e.preventDefault(); f(a, a.dataset); }
 });
 ACT.back = () => back();
@@ -54,8 +67,9 @@ function cardCv(pid, s, withStats, extra) {
   return '<canvas class="card-cv" data-pid="' + esc(pid) + '" data-s="' + s + '"' + (withStats ? ' data-st="1"' : '') + ' style="width:' + Math.round(PFT_CARDS.W * s) + 'px;height:' + Math.round(PFT_CARDS.H * s) + 'px' + (extra || '') + '" aria-label="Carte de ' + esc(pname(pid)) + '"></canvas>';
 }
 function cardData(pid, withStats, sid) {
-  const p = player(pid) || {}, me = pid === suiviId(), S = curSeason() || {};
-  const d = { nom: p.nom, numero: p.numero, poste: p.poste, fond: me ? 'forme' : 'or', photoImg: me ? imgEl(p.photo) : null, cadre: p.photoCadre, logoImg: imgEl(S.logo) };
+  /* V2 : fond choisi par Thomas pour chaque joueur (En forme / Or ; par défaut Paul en forme, les autres en or), photo pour tous */
+  const p = player(pid) || {}, S = curSeason() || {}, fond = p.carte === 'forme' || p.carte === 'or' ? p.carte : (pid === reg('suivi') ? 'forme' : 'or'), me = !!p.photo;
+  const d = { nom: p.nom, numero: p.numero, poste: p.poste, fond, photoImg: imgEl(p.photo), cadre: p.photoCadre, logoImg: imgEl(S.logo) };
   if (withStats) { const st = stats(sid || S.id, pid); d.stats = [['MJ', st.mj], ['BUTS', st.b], ['PASSES D', st.pd]]; }
   d._k = JSON.stringify([d.nom, d.numero, d.poste, d.fond, me && p.photo, !!d.photoImg, d.cadre, S.logo, !!d.logoImg, d.stats]);
   return d;
@@ -99,10 +113,11 @@ function evItem(e) {
 }
 ACT.openEvent = (el, d) => {
   const e = DB.Rencontres[d.id]; if (!e) return;
+  const sh = $('#sheet'); if (!sh.hidden) { sh.hidden = true; sh.innerHTML = ''; }
   if (e.type === 'amical') {
     const m = matchesOf(e.id)[0];
     if (!m) return go('event', { eid: e.id });
-    if (m.statut === 'prevu') return go('compo', { mid: m.id });
+    if (m.statut === 'prevu') return go(isParent() ? 'match' : 'compo', { mid: m.id });
     if (m.statut === 'en_cours') return go('live', { mid: m.id });
     return go('match', { mid: m.id });
   }
@@ -111,14 +126,17 @@ ACT.openEvent = (el, d) => {
 
 /* ---------- accueil ---------- */
 SCREENS.home = () => {
+  if (!curSeason()) return { html: '<div class="main" style="padding-top:120px;align-items:center;text-align:center"><div class="spin"></div><p class="mu">Connexion au Google Sheet…</p></div>', neutral: true };
   const S = curSeason(), pid = suiviId(), p = player(pid) || {};
   const st = stats(S.id, pid);
   const evs = eventsOf(S.id), live = evs.filter(e => e.statut !== 'termine');
   let h = topBar(S.club || 'Mon club', [S.categorie, 'Saison ' + (S.libelle || '')].filter(Boolean).join(' · '));
   h += '<div class="main">';
   h += '<button type="button" class="card" data-a="go" data-s="fiche" data-p=\'{"pid":"' + esc(pid) + '"}\' style="flex-direction:row;align-items:center;gap:14px;border:0;text-align:left;color:inherit">' + cardCv(pid, .19) +
-    '<div style="flex:1"><p class="lbl">Ma saison</p><div class="cd" style="font-size:24px">' + esc(p.nom || '') + (p.numero ? ' · n°' + esc(p.numero) : '') + '</div><p class="mu">' + esc(posteLbl(p.poste)) + ' · voir sa fiche</p></div></button>';
+    '<div style="flex:1"><p class="lbl">' + (isParent() ? 'Mon fils' : 'Ma saison') + '</p><div class="cd" style="font-size:24px">' + esc(p.nom || '') + (p.numero ? ' · n°' + esc(p.numero) : '') + '</div><p class="mu">' + esc(posteLbl(p.poste)) + ' · voir sa fiche</p></div></button>';
   h += statBoard('Saison ' + (S.libelle || '') + ' de ' + (p.nom || ''), [['pitch', st.mj, plural(st.mj, 'match', 'matchs').replace(/^\d+ /, '')], ['ball', st.b, 'buts', 'var(--c2)'], ['boot', st.pd, 'passes D'], ['star', st.v, 'victoires', 'var(--win)']]);
+  const nProp = isAdmin() ? rows('Propositions').filter(x => x.statut === 'attente').length : 0;
+  if (nProp) h += '<button type="button" class="card" data-a="go" data-s="props" style="flex-direction:row;align-items:center;background:#3A2A12;color:#FFC46B;border:0;font-weight:700">' + ICON.cam + '<span style="flex:1;text-align:left">' + nProp + ' photo' + (nProp > 1 ? 's proposées' : ' proposée') + ' par les parents</span><span>Voir</span></button>';
   h += '<button type="button" class="newbig" data-a="newPick"><span class="plus">' + ICON.plus + '</span><span><b>Nouvelle rencontre</b><small>Match amical · Plateau · Tournoi</small></span></button>';
   live.forEach(e => {
     const ms = matchesOf(e.id), r = eventResult(e), lm = ms.find(m => m.statut === 'en_cours');
@@ -127,7 +145,7 @@ SCREENS.home = () => {
   });
   const recent = evs.filter(e => e.statut === 'termine').slice(0, 3);
   if (recent.length) h += '<p class="lbl">Dernières rencontres</p>' + recent.map(evItem).join('');
-  else if (!live.length) h += '<div class="empty">Aucune rencontre pour l\'instant.<br>Crée la première avec le bouton « Nouvelle rencontre ».</div>';
+  else if (!live.length) h += '<div class="empty">Aucune rencontre pour l\'instant.' + (isParent() ? '' : '<br>Crée la première avec le bouton « Nouvelle rencontre ».') + '</div>';
   h += '</div>';
   return { html: h, tab: 'home' };
 };
@@ -277,7 +295,7 @@ SCREENS.event = p => {
   h += '</div>';
   return { html: h };
 };
-ACT.openMatch = (el, d) => { const m = DB.Matchs[d.id]; if (!m) return; go(m.statut === 'prevu' ? 'compo' : m.statut === 'en_cours' ? 'live' : 'match', { mid: m.id }); };
+ACT.openMatch = (el, d) => { const m = DB.Matchs[d.id]; if (!m) return; const sh = $('#sheet'); if (!sh.hidden) { sh.hidden = true; sh.innerHTML = ''; } go(m.statut === 'prevu' ? (isParent() ? 'match' : 'compo') : m.statut === 'en_cours' ? 'live' : 'match', { mid: m.id }); };
 ACT.addMatch = () => {
   const e = DB.Rencontres[cur().p.eid]; const last = matchesOf(e.id).slice(-1)[0];
   const lastPh = last ? phaseBase(last.phase) : 'Poule', grp = last && last.phase && last.phase.includes(' · ') ? last.phase.split(' · ')[1] : '';
