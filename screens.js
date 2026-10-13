@@ -316,6 +316,27 @@ ACT.addMatch = () => {
   };
 };
 ACT.sheetClose = () => closeSheet();
+/* V2.1 : modifier n'importe quel match (adversaire, phase, format ; date et lieu pour un amical) */
+ACT.editMatch = () => {
+  const m = DB.Matchs[cur().p.mid]; if (!m) return; const e = DB.Rencontres[m.rencontre] || {};
+  const ph = phaseBase(m.phase), grp = String(m.phase || '').includes(' · ') ? m.phase.split(' · ')[1] : '';
+  let h = '<h2>Modifier le match</h2><div class="field"><label for="emAdv">Équipe adverse</label><input id="emAdv" class="inp" autocomplete="off" value="' + esc(m.adversaire) + '"></div>';
+  if (e.type === 'tournoi') h += '<div class="row"><div class="field" style="flex:2"><label for="emPh">Phase du tournoi</label><select id="emPh" class="inp">' + PHASES.map(x => '<option' + (x === ph ? ' selected' : '') + '>' + x + '</option>').join('') + '</select></div><div class="field" style="flex:1"><label for="emGr">Groupe</label><input id="emGr" class="inp" maxlength="3" value="' + esc(grp) + '" placeholder="A"></div></div>';
+  h += '<div class="field"><span class="flab">Format</span><div class="chips" id="emFmt">' + ['5', '8', '11'].map(x => '<button type="button" class="chip' + (x === String(m.format || e.format) ? ' on' : '') + '" data-k="' + x + '">à ' + x + '</button>').join('') + '</div></div>';
+  if (e.type === 'amical') h += '<div class="row"><div class="field" style="flex:1"><label for="emD">Date</label><input id="emD" type="date" class="inp" value="' + esc(e.date) + '"></div><div class="field" style="flex:1"><label for="emH">Heure</label><input id="emH" type="time" class="inp" value="' + esc(e.heure) + '"></div></div>' +
+    '<div class="field"><label for="emL">Lieu</label><select id="emL" class="inp">' + Object.keys(LIEU_LBL).map(k => '<option value="' + k + '"' + (k === e.lieu ? ' selected' : '') + '>' + LIEU_LBL[k] + '</option>').join('') + '</select></div>';
+  h += '<div class="row"><button type="button" class="btn2" data-a="sheetClose">Annuler</button><button type="button" class="btn" id="emOk">Enregistrer</button></div>';
+  openSheet(h);
+  $$('#emFmt .chip').forEach(b => b.onclick = () => { $$('#emFmt .chip').forEach(x => x.classList.remove('on')); b.classList.add('on'); });
+  $('#emOk').onclick = () => {
+    const adv = $('#emAdv').value.trim(); if (!adv) return toast('Indique l\'équipe adverse.');
+    const row = { id: m.id, adversaire: adv, format: $('#emFmt .chip.on') ? $('#emFmt .chip.on').dataset.k : m.format };
+    if (e.type === 'tournoi') { let p = $('#emPh').value; const g = $('#emGr').value.trim(); if (p === 'Poule' && g) p += ' · ' + g.toUpperCase(); row.phase = p; }
+    const ops = [put('Matchs', row)];
+    if (e.type === 'amical' && e.id) ops.push(put('Rencontres', { id: e.id, titre: adv, date: $('#emD').value, heure: $('#emH').value, lieu: $('#emL').value }));
+    commit(ops); closeSheet(); toast('Match modifié');
+  };
+};
 ACT.distinctions = () => distinctionSheet(DB.Rencontres[cur().p.eid]);
 ACT.finishEvent = async () => {
   const e = DB.Rencontres[cur().p.eid];
@@ -387,6 +408,7 @@ SCREENS.compo = p => {
   h += '<div class="card"><p class="lbl">Joueurs convoqués (' + (c.joueurs || []).length + ' / ' + R.length + ')</p><div class="chips">' + R.map(pl => { const on = (c.joueurs || []).includes(pl.id); return '<button type="button" class="pchip' + (on ? '' : ' off') + '" data-a="cToggle" data-id="' + pl.id + '"><span class="tok' + (pl.id === suiviId() ? ' me' : '') + '">' + esc(pl.numero || initials(pl.nom)) + '</span>' + esc(pl.nom) + (on ? ' ✓' : '') + '</button>'; }).join('') + '</div>' + (R.length ? '' : '<p class="mu">L\'effectif est vide : ajoute les joueurs dans l\'onglet Effectif.</p>') + '</div>';
   if (m.statut === 'prevu') h += '<button type="button" class="btn" data-a="kickoff">Coup d\'envoi</button>';
   else h += '<button type="button" class="btn" data-a="back">Valider la composition</button>';
+  h += '<button type="button" class="btn2" data-a="editMatch">' + ICON.edit + 'Modifier le match (adversaire, format…)</button>';
   h += '</div>';
   return { html: h };
 };
@@ -532,7 +554,7 @@ SCREENS.live = p => {
     h += '<button type="button" class="ev" data-a="lEdit" data-id="' + g.id + '"><span class="min">' + num(g.minute) + '\'</span><div style="flex:1">' + t + '</div><span class="cd">' + x.sc + '</span></button>';
   });
   h += '<div class="ev" style="cursor:default"><span class="min">0\'</span><span class="mu">Coup d\'envoi</span></div></div>';
-  h += '<div class="row"><button type="button" class="btn2" data-a="lUndo"' + (gs.length ? '' : ' disabled') + '>' + ICON.undo + 'Annuler le dernier but</button><button type="button" class="btn2" style="flex:none;width:auto" data-a="go" data-s="compo" data-p=\'{"mid":"' + m.id + '"}\'>Compo</button></div>';
+  h += '<div class="row"><button type="button" class="btn2" data-a="lUndo"' + (gs.length ? '' : ' disabled') + '>' + ICON.undo + 'Annuler le dernier but</button><button type="button" class="btn2" style="flex:none;width:auto" data-a="go" data-s="compo" data-p=\'{"mid":"' + m.id + '"}\'>Compo</button><button type="button" class="btn2" style="flex:none;width:auto" data-a="editMatch" aria-label="Modifier le match">' + ICON.edit + '</button></div>';
   const lastHalf = cfg.n === 1 || c.half === 2;
   h += done ? '<button type="button" class="btn" data-a="lDone">Enregistrer</button>' : '<button type="button" class="' + (over && lastHalf ? 'btn' : 'btn2 danger') + '" data-a="lFinish">Fin du match</button>';
   h += '</div>';
@@ -692,7 +714,8 @@ SCREENS.match = p => {
     h += '<p class="mu">Remplaçants : ' + (bench.length ? esc(bench.map(pname).join(', ')) : 'aucun') + '</p>';
   }
   if (isDone(m)) h += '<p class="lbl">Compte rendu</p>' + recapPreview(e.id, e.type === 'amical' ? '' : m.id);
-  h += '<div class="row"><button type="button" class="btn2" data-a="go" data-s="live" data-p=\'{"mid":"' + m.id + '"}\'>' + ICON.edit + 'Corriger</button><button type="button" class="btn2 danger" data-a="delMatch" style="flex:none;width:auto">' + ICON.trash + '</button></div>';
+  h += '<button type="button" class="btn2" data-a="editMatch">' + ICON.edit + 'Modifier le match (adversaire, ' + (e.type === 'tournoi' ? 'phase, ' : '') + 'format' + (e.type === 'amical' ? ', date' : '') + ')</button>';
+  h += '<div class="row"><button type="button" class="btn2" data-a="go" data-s="live" data-p=\'{"mid":"' + m.id + '"}\'>' + ICON.edit + 'Corriger les buts</button><button type="button" class="btn2 danger" data-a="delMatch" style="flex:none;width:auto">' + ICON.trash + '</button></div>';
   h += '</div>';
   return { html: h };
 };

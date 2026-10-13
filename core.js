@@ -1,6 +1,6 @@
 /* Dans la Lucarne : données, synchronisation avec le Google Sheet, outils communs */
 'use strict';
-const VERSION_APP = '2.0';
+const VERSION_APP = '2.1';
 const API_URL = ((window.PFT_CONFIG || {}).apiUrl || '').trim();
 const TABLES = ['Reglages', 'Saisons', 'Joueurs', 'Rencontres', 'Matchs', 'Buts', 'Images', 'Parents', 'Propositions'];
 
