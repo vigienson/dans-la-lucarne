@@ -1,6 +1,6 @@
 /* Dans la Lucarne : données, synchronisation avec le Google Sheet, outils communs */
 'use strict';
-const VERSION_APP = '2.1';
+const VERSION_APP = '3.0';
 const API_URL = ((window.PFT_CONFIG || {}).apiUrl || '').trim();
 const TABLES = ['Reglages', 'Saisons', 'Joueurs', 'Rencontres', 'Matchs', 'Buts', 'Images', 'Parents', 'Propositions'];
 
@@ -351,6 +351,62 @@ const PHASE_RANK = { 'Poule': 0, '32e de finale': 1, '16e de finale': 2, '8e de 
 const isKO = ph => !!ph && ph !== 'Poule';
 const phaseBase = ph => String(ph || '').split(' · ')[0];
 
+/* ---------- V3 : organisation des tournois (poules puis 1, 2 ou 3 arbres) et classement final ---------- */
+const TREE_DEF = ['Ligue des Champions', 'Ligue Europa', 'Ligue Conférence'];
+const TREE_COL = ['#6FB3FF', '#FF9F43', '#4CD08A'];
+const ROUND_TEAMS = { 'Finale': 2, 'Demi-finale': 4, 'Quart de finale': 8, '8e de finale': 16, '16e de finale': 32, '32e de finale': 64 };
+const ROUNDS = ['32e de finale', '16e de finale', '8e de finale', 'Quart de finale', 'Demi-finale', 'Finale'];
+const departFor = n => n <= 2 ? 'Finale' : n <= 4 ? 'Demi-finale' : n <= 8 ? 'Quart de finale' : n <= 16 ? '8e de finale' : n <= 32 ? '16e de finale' : '32e de finale';
+/* organisation proposée : arbres découpés selon les places de poule (ex. poules de 6 en 3 arbres = 1-2 / 3-4 / 5-6) */
+function proposeOrga(equipes, poules, parPoule, nArbres, old) {
+  equipes = Math.max(0, num(equipes)); poules = Math.max(0, num(poules));
+  parPoule = num(parPoule) || (equipes && poules ? Math.ceil(equipes / poules) : 0);
+  nArbres = Math.max(1, Math.min(3, num(nArbres) || 1));
+  const arbres = [], per = parPoule ? Math.ceil(parPoule / nArbres) : 0;
+  for (let i = 0; i < nArbres; i++) {
+    const de = per ? i * per + 1 : 0, a = per ? Math.min(parPoule, (i + 1) * per) : 0;
+    const n = poules && de ? poules * (a - de + 1) : 0;
+    const prev = old && old.arbres && old.arbres[i];
+    arbres.push({ nom: (prev && prev.nom) || TREE_DEF[i], de, a, n, depart: n ? departFor(n) : 'Quart de finale' });
+  }
+  const o = { equipes: equipes || '', poules: poules || '', parPoule: parPoule || '', arbres };
+  if (old) { if (old.place != null) o.place = old.place; if (old.arbre != null) o.arbre = old.arbre; }
+  return o;
+}
+const orgaOf = e => (e && e.orga && typeof e.orga === 'object' && Array.isArray(e.orga.arbres) && e.orga.arbres.length) ? e.orga : null;
+/* places du classement final couvertes par chaque arbre (arbre 1 = 1..n1, arbre 2 = n1+1..n1+n2, …) */
+function treeRanges(o) {
+  let lo = 1; const tot = num(o.equipes);
+  return o.arbres.map((t, i) => { const n = num(t.n), r = { lo, hi: n ? lo + n - 1 : 0 }; if (i === o.arbres.length - 1 && tot) r.hi = tot; if (n) lo += n; return r; });
+}
+/* arbre de l'équipe (choisi en sortie de poule) */
+function myTree(e) {
+  const o = orgaOf(e); if (!o || o.arbre == null || o.arbre === '' || !o.arbres[+o.arbre]) return null;
+  const i = +o.arbre, r = treeRanges(o)[i];
+  return { i, nom: o.arbres[i].nom || TREE_DEF[i], col: TREE_COL[i] || '#FFC46B', lo: r.lo, hi: r.hi, multi: o.arbres.length > 1 };
+}
+const treeForPlace = (o, place) => o.arbres.findIndex(t => num(t.de) && place >= num(t.de) && place <= num(t.a));
+/* classement calculé : finale gagnée = 1er de l'arbre, perdue = 2e, match de classement pour la Xe place, sinon le tour perdu (demi = 3e-4e, quart = 5e-8e…) */
+function autoRank(e) {
+  const tr = myTree(e), off = tr ? tr.lo - 1 : 0, cap = tr && tr.hi ? tr.hi : (num((orgaOf(e) || {}).equipes) || 0);
+  const ko = matchesOf(e.id).filter(m => isDone(m) && isKO(phaseBase(m.phase))).sort((a, b) => num(a.ordre) - num(b.ordre));
+  if (!ko.length) return null;
+  const clamp = r => { if (cap) { r.hi = Math.min(r.hi, cap); r.lo = Math.min(r.lo, cap); } return r; };
+  const fin = ko.filter(m => phaseBase(m.phase) === 'Finale').pop();
+  if (fin) { const p = off + (wonKO(fin) ? 1 : 2); return clamp({ lo: p, hi: p }); }
+  const cl = ko.filter(m => phaseBase(m.phase) === 'Match de classement' && num(String(m.phase).split(' · ')[1])).pop();
+  if (cl) { const p = off + num(String(cl.phase).split(' · ')[1]) + (wonKO(cl) ? 0 : 1); return clamp({ lo: p, hi: p }); }
+  const last = ko.filter(m => ROUND_TEAMS[phaseBase(m.phase)]).pop(); if (!last) return null;
+  const size = ROUND_TEAMS[phaseBase(last.phase)];
+  if (wonKO(last)) return clamp({ lo: off + 1, hi: off + size / 2 });   // qualifié pour le tour suivant
+  return clamp({ lo: off + size / 2 + 1, hi: off + size });
+}
+/* classement final : celui saisi par l'organisateur, sinon le calcul */
+function finalRank(e) { const c = num(e && e.classement); return c > 0 ? { lo: c, hi: c, manual: true } : autoRank(e); }
+const ordinal = n => n + (n === 1 ? 'er' : 'e');
+const rankTxt = r => !r ? '' : r.lo === r.hi ? ordinal(r.lo) : r.lo + 'e-' + r.hi + 'e';
+const eventTeams = e => num((orgaOf(e) || {}).equipes) || 0;
+
 function eventResult(e) {
   const ms = matchesOf(e.id).filter(isDone);
   if (!ms.length) return { txt: e.statut === 'termine' ? '—' : 'À jouer', cls: '' };
@@ -359,15 +415,17 @@ function eventResult(e) {
     const c = { V: 0, N: 0, D: 0 }; ms.forEach(m => c[result(m)]++);
     return { txt: c.V + 'V ' + c.N + 'N ' + c.D + 'D', cls: '', v: c };
   }
+  const tr = myTree(e), place = finalRank(e), tn = tr && (tr.multi || tr.i > 0) ? ' ' + tr.nom : '';
+  const R = o => { o.tree = tr; o.place = place; o.total = eventTeams(e); if (place) o.rank = 1000 - place.lo; return o; };
   const fin = ms.find(m => phaseBase(m.phase) === 'Finale');
-  if (fin) return wonKO(fin) ? { txt: 'Vainqueur', cls: 'gold', rank: 9 } : { txt: 'Finaliste', cls: 'gold', rank: 8 };
+  if (fin) return R(wonKO(fin) ? { txt: 'Vainqueur' + tn, cls: 'gold', rank: 9, win: true } : { txt: 'Finaliste' + tn, cls: 'gold', rank: 8, final: true });
   let best = -1, ph = '', bm = null;
   ms.forEach(m => { const b = phaseBase(m.phase); const r = PHASE_RANK[b] ?? 0; if (r > best && b !== 'Match de classement') { best = r; ph = b; bm = m; } });
-  if (best <= 0) return { txt: 'Phase de poules', cls: 'gold', rank: 0 };
+  if (best <= 0) return R({ txt: tr ? tr.nom : 'Phase de poules', cls: 'gold', rank: 0, pool: true });
   /* match à élimination gagné : l'équipe a atteint le tour suivant */
   const NEXT = ['Poule', '16e de finale', '8e de finale', 'Quart de finale', 'Demi-finale', 'Finale', 'Finale'];
-  if (bm && wonKO(bm)) return { txt: NEXT[best], cls: 'gold', rank: best + .5 };
-  return { txt: ph, cls: 'gold', rank: best };
+  if (bm && wonKO(bm)) return R({ txt: NEXT[best] + tn, cls: 'gold', rank: best + .5 });
+  return R({ txt: ph + tn, cls: 'gold', rank: best });
 }
 
 /* statistiques d'une saison (ou de toutes si sid = '*') ; pid = joueur (facultatif) */

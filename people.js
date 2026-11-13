@@ -105,8 +105,8 @@ function playedMatches(pid, sid) {
 /* exploits calculés tout seuls ; chacun garde la liste des matchs (ou du tournoi) concernés */
 function exploits(pid, sid) {
   const pm = playedMatches(pid, sid), out = [];
-  const wins = []; new Set(pm.filter(r => r.e.type === 'tournoi').map(r => r.e)).forEach(e => { if (e.statut === 'termine' && eventResult(e).txt === 'Vainqueur') wins.push(e); });
-  if (wins.length) out.push({ ic: 'cup', t: plural(wins.length, 'tournoi gagné', 'tournois gagnés'), s: wins.map(e => e.titre).join(', '), ev: wins });
+  const wins = []; new Set(pm.filter(r => r.e.type === 'tournoi').map(r => r.e)).forEach(e => { if (e.statut === 'termine' && eventResult(e).win) wins.push(e); });
+  if (wins.length) out.push({ ic: 'cup', t: plural(wins.length, 'coupe gagnée', 'coupes gagnées'), s: wins.map(e => { const tr = myTree(e); return e.titre + (tr && (tr.multi || tr.i > 0) ? ' (' + tr.nom + ')' : ''); }).join(', '), ev: wins });
   const best = Math.max(0, ...pm.map(r => r.x.b + r.x.pd));
   if (best > 0) {
     const bm = pm.filter(r => r.x.b + r.x.pd === best), x = bm[0].x;
@@ -723,7 +723,7 @@ const APP_ICON = new Image(); APP_ICON.onload = () => paintRecaps(); APP_ICON.sr
 if (document.fonts) Promise.all(['900 40px "Barlow Condensed"', '700 40px "Barlow Condensed"', '800 40px "Barlow Semi Condensed"', '700 40px "Barlow Semi Condensed"', '600 40px "Barlow Semi Condensed"', '600 40px Barlow'].map(f => document.fonts.load(f).catch(() => {})))
   .then(() => { RECAP_CACHE.clear(); $$('canvas.recap-cv').forEach(c => c._big = null); paintRecaps(); });
 const PH_SHORT = { 'Quart de finale': 'Quart', 'Demi-finale': 'Demi', 'Match de classement': 'Classement', '32e de finale': '32e', '16e de finale': '16e', '8e de finale': '8e' };
-const phShort = ph => { const b = phaseBase(ph), g = String(ph || '').split(' · ')[1]; return (PH_SHORT[b] || b) + (g ? ' ' + g : ''); };
+const phShort = ph => { const b = phaseBase(ph), g = String(ph || '').split(' · ')[1]; if (b === 'Match de classement' && num(g)) return 'Place ' + num(g); return (PH_SHORT[b] || b) + (g ? ' ' + g : ''); };
 const QUOTES_N = ['Un point de pris, on lâche rien.', 'Match serré, on reviendra plus forts.', 'Partage des points, la suite au prochain épisode.'];
 const QUOTES_D = [['TÊTE HAUTE !', 'On apprend, et on revient plus forts.'], ['ON SE RELÈVE !', 'Les grandes équipes savent rebondir.'], ['ON REMET ÇA !', 'La prochaine sera la bonne.']];
 const hash = s => { let h = 0; String(s).split('').forEach(c => h = (h * 31 + c.charCodeAt(0)) | 0); return Math.abs(h); };
@@ -789,9 +789,14 @@ function recapData(e, mid) {
     const q = hash(e.id + (mid || ''));
     R.quote = QUOTES_N[q % QUOTES_N.length]; R.quoteTitle = QUOTES_D[q % QUOTES_D.length][0]; if (R.outcome === 'D') R.quote = QUOTES_D[q % QUOTES_D.length][1];
   } else if (e.type === 'tournoi') {
-    const r = eventResult(e);
-    R.outcome = r.txt === 'Vainqueur' ? 'champion' : 'mixed';
-    R.headline = r.txt === 'Finaliste' ? 'FINALISTE' : r.txt === 'Phase de poules' ? 'BILAN DU TOURNOI' : r.txt === 'Vainqueur' ? 'VAINQUEUR' : String(r.txt).toUpperCase();
+    const r = eventResult(e), tr = r.tree;
+    R.outcome = r.win ? 'champion' : 'mixed';
+    R.headline = r.final ? 'FINALISTE' : r.pool ? 'BILAN DU TOURNOI' : r.win ? 'VAINQUEUR' : String(r.txt).replace(tr && tr.multi ? ' ' + tr.nom : '', '').toUpperCase();
+    /* place exacte dans l'arbre après un match de classement (ex. 3e place de la Ligue Europa) */
+    if (!r.win && !r.final && r.place && r.place.lo === r.place.hi && e.statut === 'termine' && matchesOf(e.id).some(m => phaseBase(m.phase) === 'Match de classement')) R.headline = ordinal(r.place.lo - (tr ? tr.lo - 1 : 0)).toUpperCase() + ' PLACE';
+    /* V3 : arbre (Ligue Europa…) et classement final sur l'image */
+    if (tr && (tr.multi || tr.i > 0)) { R.tree = tr.nom; R.treeCol = tr.col; }
+    if (r.place && e.statut === 'termine') R.place = rankTxt(r.place) + (r.total ? ' sur ' + r.total + ' équipes' : '');
   } else { R.outcome = 'mixed'; R.headline = 'BILAN DU PLATEAU'; }
   return R;
 }
@@ -834,9 +839,9 @@ function recapText(R) {
     else if (R.outcome === 'N') t = '🤝 Match nul ' + sc + ' contre ' + opp + '. ' + R.quote + (buts ? '\n⚽ ' + buts : '') + bestLine;
     else t = '💪 Défaite ' + sc + ' contre ' + opp + ', mais tête haute !' + (me && me.b ? ' ' + me.name + ' a marqué' + ((R.goals || []).filter(g => g.me).map(g => ' (' + g.min + '\')').join('')) + '.' : '') + ' On remet ça !';
   } else if (R.outcome === 'champion') {
-    t = '🏆 VAINQUEURS du ' + R.title + ' ! ' + R.stats.mj + ' matchs, ' + R.stats.v + ' victoires, ' + R.stats.bp + ' buts marqués, ' + R.stats.bc + ' encaissé' + (R.stats.bc > 1 ? 's' : '') + '.' + (teamLine ? '\n⚽ ' + teamLine : '') + '\nQuelle journée ! 🎉';
+    t = '🏆 VAINQUEURS ' + (R.tree ? 'de la ' + R.tree + ' au ' : 'du ') + R.title + ' !' + (R.place ? ' (' + R.place + ')' : '') + ' ' + R.stats.mj + ' matchs, ' + R.stats.v + ' victoires, ' + R.stats.bp + ' buts marqués, ' + R.stats.bc + ' encaissé' + (R.stats.bc > 1 ? 's' : '') + '.' + (teamLine ? '\n⚽ ' + teamLine : '') + '\nQuelle journée ! 🎉';
   } else {
-    const head = R.headline === 'FINALISTE' ? '🥈 Finalistes du ' + R.title + ' !' : R.kind === 'tournoi' ? '🏟️ ' + R.title + ' : ' + R.headline.toLowerCase() : '📋 ' + R.title;
+    const head = (R.headline === 'FINALISTE' ? '🥈 Finalistes ' + (R.tree ? 'de la ' + R.tree + ' au ' : 'du ') + R.title + ' !' : R.kind === 'tournoi' ? '🏟️ ' + R.title + ' : ' + R.headline.toLowerCase() + (R.tree ? ' (' + R.tree + ')' : '') : '📋 ' + R.title) + (R.place ? '\n🏅 Classement final : ' + R.place : '');
     t = head + '\n' + R.stats.v + ' victoire' + (R.stats.v > 1 ? 's' : '') + ', ' + R.stats.n + ' nul' + (R.stats.n > 1 ? 's' : '') + ', ' + R.stats.d + ' défaite' + (R.stats.d > 1 ? 's' : '') + ' · ' + R.stats.bp + ' buts marqués, ' + R.stats.bc + ' encaissé' + (R.stats.bc > 1 ? 's' : '') + '.' + (teamLine ? '\n⚽ ' + teamLine : '');
   }
   return t + '\n— ' + [R.club.name, R.club.cat].filter(Boolean).join(' ') + ' · Dans la Lucarne';
@@ -864,9 +869,26 @@ async function shareCanvas(cv, name, text) {
 }
 /* distinctions de fin de tournoi */
 function distinctionSheet(e) {
-  const p = player(suiviId()) || {};
-  openSheet('<h2>Tournoi terminé !</h2><p class="mu">Une distinction officielle pour ' + esc(p.nom || '') + ' ?</p><label class="row" style="font-weight:700;font-size:16px;min-height:48px"><input type="checkbox" id="dsBut"' + (String(e.distinctions || '').includes('buteur') ? ' checked' : '') + ' style="width:24px;height:24px;accent-color:var(--c2)">Meilleur buteur du tournoi</label><button type="button" class="btn" id="dsOk">Voir le compte rendu</button>');
-  $('#dsOk').onclick = () => { commit([put('Rencontres', { id: e.id, distinctions: $('#dsBut').checked ? 'buteur' : '' })]); closeSheet(); window.scrollTo(0, 0); };
+  /* V3 : classement final (calculé, corrigeable) + distinction officielle */
+  const p = player(suiviId()) || {}, r = eventResult(e), auto = autoRank(e), cur0 = num(e.classement) || (auto ? auto.lo : 0), tot = eventTeams(e);
+  let val = cur0;
+  const tr = myTree(e);
+  const draw = () => {
+    openSheet('<h2>Tournoi terminé !</h2>' + (r.txt && r.txt !== '—' ? '<div class="card" style="background:var(--s2)' + (tr ? ';border-top:4px solid ' + tr.col : '') + '"><b style="font-size:17px;color:#FFC46B">' + esc(r.txt) + '</b>' + (tr && !r.txt.includes(tr.nom) ? '<span class="mu" style="color:' + tr.col + ';font-weight:700">' + esc(tr.nom) + '</span>' : '') + '</div>' : '') +
+      '<p class="mu">Classement final' + (auto ? ' (calculé tout seul : ' + rankTxt(auto) + ')' : '') + '</p>' +
+      '<div class="row" style="align-items:center"><button type="button" class="btn2" id="dsM" style="flex:none;width:56px" aria-label="Une place de moins">–</button><div class="card" style="flex:1;align-items:center;flex-direction:row;justify-content:center;gap:6px;padding:10px"><b class="cd" style="font-size:40px;color:var(--c2)">' + (val ? ordinal(val) : '—') + '</b><span class="mu">sur</span><input id="dsTot" class="inp" inputmode="numeric" value="' + (tot || '') + '" placeholder="?" style="width:64px;text-align:center"><span class="mu">équipes</span></div><button type="button" class="btn2" id="dsP" style="flex:none;width:56px" aria-label="Une place de plus">+</button></div>' +
+      '<p class="mu" style="margin-top:-4px">Corrige si le tournoi a classé autrement (égalités, organisation différente…).</p>' +
+      '<label class="row" style="font-weight:700;font-size:16px;min-height:48px"><input type="checkbox" id="dsBut"' + (String(e.distinctions || '').includes('buteur') ? ' checked' : '') + ' style="width:24px;height:24px;accent-color:var(--c2)">' + esc(p.nom || 'Meilleur') + ' meilleur buteur du tournoi</label><button type="button" class="btn" id="dsOk">Voir le compte rendu</button>');
+    const keepTot = () => { const t = num($('#dsTot').value); return t; };
+    $('#dsM').onclick = () => { const t = keepTot(); val = Math.max(1, (val || 2) - 1); draw(); if (t) $('#dsTot').value = t; };
+    $('#dsP').onclick = () => { const t = keepTot(); val = (val || 0) + 1; if (t) val = Math.min(t, val); draw(); if (t) $('#dsTot').value = t; };
+    $('#dsOk').onclick = () => {
+      const t = num($('#dsTot').value), row = { id: e.id, distinctions: $('#dsBut').checked ? 'buteur' : '', classement: val && (!auto || val !== auto.lo || auto.lo !== auto.hi || num(e.classement)) ? val : '' };
+      if (t && t !== tot) row.orga = Object.assign({}, orgaOf(e) || { arbres: [{ nom: TREE_DEF[0], de: '', a: '', n: '', depart: 'Quart de finale' }] }, { equipes: t });
+      commit([put('Rencontres', row)]); closeSheet(); window.scrollTo(0, 0);
+    };
+  };
+  draw();
 }
 /* ---------- démarrage ---------- */
 (function boot() {

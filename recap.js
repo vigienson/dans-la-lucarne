@@ -21,11 +21,12 @@
     if (mood === 'loss') { g.addColorStop(0, shade(c1, .55)); g.addColorStop(1, '#070A10'); }
     else { g.addColorStop(0, shade(c1, 1.05)); g.addColorStop(.55, shade(c1, .5)); g.addColorStop(1, '#060B16'); }
     x.fillStyle = g; x.fillRect(0, 0, W, H);
-    /* bandes diagonales discrètes (style maillot) */
-    x.save(); x.globalAlpha = mood === 'loss' ? .03 : .05; x.fillStyle = '#FFFFFF';
-    for (let i = -H; i < W; i += 90) { x.beginPath(); x.moveTo(i, 0); x.lineTo(i + 40, 0); x.lineTo(i + 40 + H * .6, H); x.lineTo(i + H * .6, H); x.closePath(); x.fill(); }
-    x.restore();
+    /* V3 : plus de bandes diagonales (texte peu lisible) : fond uni + léger halo en haut + vignette douce */
+    glow(x, W / 2, 360, 620, mood === 'loss' ? '#8FA3BC' : shade(c1, 1.6).replace(/rgb\((\d+),(\d+),(\d+)\)/, (m, r, g2, b) => '#' + [r, g2, b].map(v => (+v).toString(16).padStart(2, '0')).join('')), mood === 'loss' ? .10 : .22);
+    const v = x.createRadialGradient(W / 2, H / 2, H * .35, W / 2, H / 2, H * .85); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,.35)');
+    x.fillStyle = v; x.fillRect(0, 0, W, H);
   }
+  function onDark(h) { h = String(h || '#E5D52B').replace('#', ''); const n = parseInt(h, 16); return ((n >> 16 & 255) * .299 + (n >> 8 & 255) * .587 + (n & 255) * .114) > 150 ? '#141414' : '#FFFFFF'; }
   function rays(x, cx, cy, col, n, alpha) {
     x.save(); x.translate(cx, cy);
     for (let i = 0; i < n; i++) {
@@ -271,15 +272,22 @@
   /* titre en tournoi */
   T.champion = (x, R) => {
     background(x, R, 'win');
-    rays(x, W / 2, 330, '#F5C542', 28, .10);
-    glow(x, W / 2, 330, 360, '#F5C542', .35);
-    confetti(x, [R.club.c2, '#F5C542', '#FFFFFF', R.club.c1], 140, 7, 640);
+    rays(x, W / 2, 310, '#F5C542', 28, .07);
+    glow(x, W / 2, 310, 340, '#F5C542', .32);
+    confetti(x, [R.club.c2, '#F5C542', '#FFFFFF', R.club.c1], 140, 7, 600);
     header(x, R, 'TOURNOI');
-    trophy(x, W / 2, 330, 190);
-    bigTitle(x, 'VAINQUEUR', 575, 150, goldFill(x, 460, 575), '#3A2800');
-    x.fillStyle = '#FFFFFF'; x.textAlign = 'center'; x.font = '700 42px ' + FS; x.fillText(R.title, W / 2, 632);
-    statTiles(x, [[R.stats.mj, 'matchs'], [R.stats.v, 'victoires', '#4CD08A'], [R.stats.bp, 'buts marqués', '#4CD08A'], [R.stats.bc, 'encaissés', '#FF7A70']], 662, 116);
-    const yb = matchRows(x, R, 60, 796, W - 120, 52, 150);
+    const extra = !!(R.tree || R.place);
+    trophy(x, W / 2, extra ? 300 : 330, extra ? 170 : 190);
+    let y = extra ? 520 : 575;
+    bigTitle(x, 'VAINQUEUR', y, extra ? 140 : 150, goldFill(x, y - 115, y), '#3A2800');
+    /* V3 : nom de l'arbre (Ligue Europa…) et classement final */
+    if (R.tree) { y += 62; x.save(); x.textAlign = 'center'; fit(x, R.tree.toUpperCase(), W - 160, 58, '900', F9); x.lineWidth = 8; x.strokeStyle = 'rgba(0,0,0,.45)'; x.strokeText(R.tree.toUpperCase(), W / 2, y); x.fillStyle = R.treeCol || '#FFC46B'; x.fillText(R.tree.toUpperCase(), W / 2, y); x.restore(); }
+    y += extra ? 48 : 57;
+    x.fillStyle = '#FFFFFF'; x.textAlign = 'center'; fit(x, R.title, W - 160, extra ? 36 : 42, '700', FS); x.fillText(R.title, W / 2, y);
+    if (R.place) { pill(x, R.place, W / 2, y + 16, R.club.c2, onDark(R.club.c2), 30, 'center'); y += 62; }
+    const yt = Math.max(662, y + 24);
+    statTiles(x, [[R.stats.mj, 'matchs'], [R.stats.v, 'victoires', '#4CD08A'], [R.stats.bp, 'buts marqués', '#4CD08A'], [R.stats.bc, 'encaissés', '#FF7A70']], yt, extra ? 104 : 116);
+    const yb = matchRows(x, R, 60, yt + (extra ? 122 : 134), W - 120, 52, extra ? 130 : 150);
     teamRow(x, R, yb + 14, 1262);
     footer(x, R);
   };
@@ -327,7 +335,8 @@
     background(x, R, R.stats.v >= R.stats.d ? 'win' : 'loss');
     header(x, R, R.label);
     bigTitle(x, R.headline, 290, 124, '#FFFFFF');
-    x.fillStyle = 'rgba(255,255,255,.8)'; x.textAlign = 'center'; x.font = '700 38px ' + FS; x.fillText(R.title, W / 2, 346);
+    const sub = [R.title, R.tree, R.place].filter(Boolean).join(' · ');
+    x.fillStyle = 'rgba(255,255,255,.85)'; x.textAlign = 'center'; fit(x, sub, W - 120, 38, '700', FS); x.fillText(sub, W / 2, 346);
     /* trois pastilles V / N / D */
     [['V', R.stats.v, 'VICTOIRES', '#4CD08A'], ['N', R.stats.n, 'NULS', '#E6E9EF'], ['D', R.stats.d, 'DÉFAITES', '#FF7A70']].forEach((it, i) => {
       const cx = 220 + i * 320;

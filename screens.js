@@ -106,7 +106,7 @@ function evItem(e) {
   const right = live ? '<span style="font-weight:700;font-size:13px;color:var(--c2)">En cours</span>' :
     r.big ? '<span class="cd ' + r.cls + '" style="font-size:20px">' + r.txt + '</span>' :
       r.v ? '<span class="cd" style="font-size:17px">' + vnd(r.v.V, r.v.N, r.v.D) + '</span>' :
-        '<span style="font-weight:700;font-size:14px;color:#FFC46B">' + esc(r.txt) + '</span>';
+        '<span style="font-weight:700;font-size:14px;color:#FFC46B">' + esc(r.txt + (r.place && !live ? ' · ' + rankTxt(r.place) + (r.total ? '/' + r.total : '') : '')) + '</span>';
   const pls = pl.b || pl.pd ? '<span class="sci">' + esc(pname(pid)) + icBP(pl.b, pl.pd) + '</span>' : '';   // v1.3 : icônes ballon / chaussure
   return '<button type="button" class="it' + (live ? ' live' : '') + '" data-a="openEvent" data-id="' + e.id + '">' + typeIcon(e.type) +
     '<div class="grow"><div class="t1">' + esc(evTitle(e)) + '</div><p class="mu">' + esc(sub) + '</p></div><div class="res">' + right + (pls ? '<span class="mu">' + pls + '</span>' : '') + '</div></button>';
@@ -207,7 +207,7 @@ SCREENS.new = p => {
   h += '<div class="row" style="align-items:flex-end"><div class="field" style="flex:1"><label for="nMt">Durée d\'une mi-temps</label><div class="row" style="gap:8px"><input id="nMt" class="inp" name="mtMin" type="number" inputmode="numeric" min="1" max="60" value="' + esc(f.mtMin) + '" placeholder="ex. 25" style="width:90px"><span class="mu">minutes</span></div></div>' +
     '<div class="field"><span class="flab">Mi-temps</span><div class="seg" style="padding:3px">' + ['1', '2'].map(n => '<button type="button" class="' + (String(f.mtN) === n ? 'on' : '') + '" data-a="newMtN" data-k="' + n + '" style="min-height:40px;padding:0 14px">' + n + '</button>').join('') + '</div></div></div>' +
     '<p class="mu" style="margin-top:-6px">Le chronomètre du match suit ces durées (laisser vide pour un chrono libre).</p>';
-  if (t === 'tournoi') h += '<label class="row" style="font-weight:600"><input type="checkbox" name="tab" ' + (f.tab ? 'checked' : '') + ' style="width:22px;height:22px;accent-color:var(--c2)">Tirs au but en cas d\'égalité (phases finales)</label>';
+  if (t === 'tournoi') h += '<label class="row" style="font-weight:600"><input type="checkbox" name="tab" ' + (f.tab ? 'checked' : '') + ' style="width:22px;height:22px;accent-color:var(--c2)">Tirs au but en cas d\'égalité (phases finales)</label>' + orgaCard(f.orga, 'new');
   h += '<button type="button" class="btn" data-a="newCreate">' + (t === 'amical' ? 'Choisir les joueurs' : 'Créer le ' + TYPE_LBL[t].toLowerCase()) + '</button>';
   h += '</div>';
   return { html: h };
@@ -227,7 +227,7 @@ ACT.newCreate = () => {
   LS.set('lastFormat', f.format);
   const mtMin = Math.max(0, Math.min(60, parseInt(f.mtMin, 10) || 0)), mtN = f.mtN === '1' ? 1 : 2;
   LS.set('lastMtMin', mtMin ? String(mtMin) : ''); LS.set('lastMtN', String(mtN));
-  const e = { id: uid('R'), saison: reg('saison'), type: t, titre: f.titre, date: f.date || todayIso(), heure: f.heure, lieu: f.lieu, format: f.format, duree: mtMin ? (mtN === 2 ? '2 × ' + mtMin + ' min' : mtMin + ' min') : (mtN === 1 ? '1 mi-temps' : ''), mitemps: mtN + 'x' + (mtMin || ''), tab: t === 'tournoi' ? !!f.tab : false, statut: 'en_cours', creeLe: nowIso() };
+  const e = { id: uid('R'), saison: reg('saison'), type: t, titre: f.titre, orga: t === 'tournoi' && f.orga ? f.orga : null, date: f.date || todayIso(), heure: f.heure, lieu: f.lieu, format: f.format, duree: mtMin ? (mtN === 2 ? '2 × ' + mtMin + ' min' : mtMin + ' min') : (mtN === 1 ? '1 mi-temps' : ''), mitemps: mtN + 'x' + (mtMin || ''), tab: t === 'tournoi' ? !!f.tab : false, statut: 'en_cours', creeLe: nowIso() };
   const ops = [put('Rencontres', e)];
   if (t === 'amical') {
     const m = newMatch(e, f.titre, '');
@@ -260,8 +260,11 @@ SCREENS.event = p => {
   h += '<div class="main">';
   if (!live && done.length) h += recapPreview(e.id);
   if (e.type === 'tournoi') {
-    const r = eventResult(e);
-    h += '<div class="card" style="flex-direction:row;align-items:center;gap:12px"><span style="color:#FFC46B;width:30px;height:30px;flex:none">' + ICON.trophy.replace('class="ic"', 'class="ic" style="width:30px;height:30px"') + '</span><span class="cd" style="font-size:26px;color:#FFC46B">' + esc(live && !done.length ? 'À jouer' : r.txt) + '</span></div>';
+    /* V3 : résultat, arbre de l'équipe et classement final */
+    const r = eventResult(e), tr = myTree(e), pl = r.place, tot = eventTeams(e);
+    h += '<div class="card tour-res" style="' + (tr ? 'border-top:4px solid ' + tr.col : '') + '"><div class="row" style="align-items:center;gap:12px"><span style="color:#FFC46B;width:30px;height:30px;flex:none">' + ICON.trophy.replace('class="ic"', 'class="ic" style="width:30px;height:30px"') + '</span><div style="flex:1;min-width:0"><div class="cd" style="font-size:24px;color:#FFC46B">' + esc(live && !done.length ? 'À jouer' : r.txt) + '</div>' + (tr && !r.txt.includes(tr.nom) ? '<p class="mu" style="color:' + tr.col + ';font-weight:700">' + esc(tr.nom) + '</p>' : '') + '</div>' +
+      (pl ? '<div style="text-align:right"><span class="mu" style="font-size:11px;font-weight:700;letter-spacing:.05em">' + (live ? 'CLASSEMENT' : 'CLASSEMENT FINAL') + '</span><div><b class="cd" style="font-size:32px;color:var(--c2)">' + rankTxt(pl) + '</b>' + (tot ? '<span class="mu"> / ' + tot + '</span>' : '') + '</div></div>' : '') + '</div>' +
+      (orgaOf(e) ? '<p class="mu">' + esc(orgaSummary(orgaOf(e))) + '</p>' : '') + '<button type="button" class="chip" style="align-self:flex-start" data-a="orgaEdit">' + (orgaOf(e) ? 'Organisation du tournoi' : 'Définir l\'organisation (arbres, classement)') + '</button></div>';
   }
   o.mj = done.length;
   h += summaryBoard(o);
@@ -269,7 +272,11 @@ SCREENS.event = p => {
   if (!ms.length) h += '<div class="empty">Aucun match pour l\'instant.</div>';
   let ph = '';
   ms.forEach((m, i) => {
-    if (e.type === 'tournoi' && m.phase !== ph) { ph = m.phase; h += '<p class="ph-sep">' + esc(m.phase || 'Match') + '</p>'; }
+    if (e.type === 'tournoi' && m.phase !== ph) {
+      const tr = myTree(e), firstKO = isKO(phaseBase(m.phase)) && !isKO(phaseBase(ph));
+      if (tr && firstKO) h += '<p class="ph-sep" style="color:' + tr.col + ';font-size:14px">' + esc(tr.nom) + '</p>';
+      ph = m.phase; h += '<p class="ph-sep">' + esc(phLabel(m.phase) || 'Match') + '</p>';
+    }
     const s = score(m), sc = goalsOf(m.id).filter(g => g.camp === 'nous' && g.buteur && g.special !== 'inconnu');
     /* v1.3 : qui a marqué / fait une passe D, avec les icônes ballon et chaussure */
     const cnt = {}, add = (k, f) => { (cnt[k] = cnt[k] || { b: 0, pd: 0 })[f]++; };
@@ -289,7 +296,7 @@ SCREENS.event = p => {
       ks.map(k => '<div class="tr"' + (k === pid ? ' style="background:var(--s2);border-radius:10px;margin:0 -8px;padding:0 8px"' : '') + '><span style="flex:1;font-weight:' + (k === pid ? 800 : 500) + (k === pid ? ';color:var(--c2)' : '') + '">' + esc(pname(k)) + '</span><span class="c">' + tally[k].b + '</span><span class="c">' + tally[k].pd + '</span></div>').join('') + '</div></div>';
   }
   if (live) h += '<button type="button" class="btn" data-a="finishEvent">Terminer le ' + TYPE_LBL[e.type].toLowerCase() + '</button>';
-  else if (e.type === 'tournoi') h += '<button type="button" class="btn2" data-a="distinctions">' + ICON.trophy + 'Distinctions (meilleur buteur du tournoi)</button>';
+  else if (e.type === 'tournoi') h += '<button type="button" class="btn2" data-a="distinctions">' + ICON.trophy + 'Classement final et distinctions</button>';
   if (live && done.length) h += '<p class="lbl">Compte rendu provisoire</p>' + recapPreview(e.id);
   h += '<div class="row"><button type="button" class="btn2" data-a="editEvent">' + ICON.edit + 'Modifier</button>' + (live ? '' : '<button type="button" class="btn2" data-a="reopenEvent">Rouvrir</button>') + '<button type="button" class="btn2 danger" data-a="deleteEvent">' + ICON.trash + 'Supprimer</button></div>';
   h += '</div>';
@@ -297,31 +304,78 @@ SCREENS.event = p => {
 };
 ACT.openMatch = (el, d) => { const m = DB.Matchs[d.id]; if (!m) return; const sh = $('#sheet'); if (!sh.hidden) { sh.hidden = true; sh.innerHTML = ''; } go(m.statut === 'prevu' ? (isParent() ? 'match' : 'compo') : m.statut === 'en_cours' ? 'live' : 'match', { mid: m.id }); };
 ACT.addMatch = () => {
-  const e = DB.Rencontres[cur().p.eid]; const last = matchesOf(e.id).slice(-1)[0];
-  const lastPh = last ? phaseBase(last.phase) : 'Poule', grp = last && last.phase && last.phase.includes(' · ') ? last.phase.split(' · ')[1] : '';
+  const e = DB.Rencontres[cur().p.eid], ms = matchesOf(e.id), last = ms.slice(-1)[0], o = orgaOf(e);
+  /* V3 : sortie de poule → place dans la poule → arbre (Ligue des Champions, Europa, Conférence) */
+  if (e.type === 'tournoi' && o && (o.place == null || o.place === '') && last && !isKO(phaseBase(last.phase))) return poolExitSheet(e);
+  matchSheet(e);
+};
+function poolExitSheet(e, sel) {
+  const o = orgaOf(e), maxP = Math.max(num(o.parPoule) || 0, ...o.arbres.map(t => num(t.a)), 4);
+  let h = '<h2>Fin des poules ?</h2><p class="mu">L\'équipe a fini à quelle place de sa poule ?</p><div class="chips">' + Array.from({ length: maxP }, (x, i) => i + 1).map(n => '<button type="button" class="chip' + (sel === n ? ' on' : '') + '" data-p="' + n + '" style="min-width:48px;justify-content:center">' + ordinal(n) + '</button>').join('') + '</div>';
+  if (sel) {
+    const i = treeForPlace(o, sel), rg = i >= 0 ? treeRanges(o)[i] : null;
+    h += i >= 0 ? '<div class="card" style="background:var(--s2);border-top:4px solid ' + TREE_COL[i] + '"><span class="mu" style="font-weight:700;font-size:12px">DIRECTION</span><b class="cd" style="font-size:28px;color:' + TREE_COL[i] + '">' + esc((o.arbres[i].nom || TREE_DEF[i]).toUpperCase()) + '</b>' + (rg.hi ? '<span class="mu">Classement final entre le ' + ordinal(rg.lo) + ' et le ' + ordinal(rg.hi) + '</span>' : '') + '</div><button type="button" class="btn" id="peGo">Continuer en ' + esc(o.arbres[i].nom || TREE_DEF[i]) + '</button>'
+      : '<div class="card" style="background:var(--s2)"><b>Pas de phase finale pour cette place</b><p class="mu">Le classement final se met à la main en fin de tournoi.</p></div><button type="button" class="btn" id="peGo">Enregistrer</button>';
+  }
+  h += '<button type="button" class="btn2" id="pePoule">Encore un match de poule</button><button type="button" class="btn2" data-a="sheetClose">Annuler</button>';
+  openSheet(h);
+  $$('#sheet [data-p]').forEach(b => b.onclick = () => poolExitSheet(e, +b.dataset.p));
+  $('#pePoule').onclick = () => matchSheet(e, true);
+  if (sel) $('#peGo').onclick = () => {
+    const i = treeForPlace(o, sel), no = Object.assign({}, o, { place: sel, arbre: i >= 0 ? i : null });
+    commit([put('Rencontres', { id: e.id, orga: no })]);
+    if (i >= 0) matchSheet(DB.Rencontres[e.id]); else closeSheet();
+  };
+}
+/* phase proposée pour le prochain match : tour suivant après une victoire, tour de départ de l'arbre en sortie de poule */
+function nextPhase(e) {
+  const ms = matchesOf(e.id), last = ms.slice(-1)[0], tr = myTree(e), o = orgaOf(e);
+  if (!last) return 'Poule';
+  const b = phaseBase(last.phase);
+  if (!isKO(b)) return tr ? (o.arbres[tr.i].depart || 'Quart de finale') : b;
+  if (b === 'Finale' || b === 'Match de classement') return b;
+  const k = ROUNDS.indexOf(b);
+  if (k >= 0 && isDone(last) && !wonKO(last)) return 'Match de classement';
+  return k >= 0 && k < ROUNDS.length - 1 ? ROUNDS[k + 1] : b;
+}
+const phLabel = ph => { const b = phaseBase(ph), x = String(ph || '').split(' · ')[1]; return b === 'Match de classement' && x ? 'Match pour la ' + ordinal(num(x)) + ' place' : (ph || ''); };
+/* champ « Phase » d'un match de tournoi : phase + groupe (poule) ou place (match de classement) */
+function phaseFields(e, ph, sfx, id) {
+  const tr = myTree(e);
+  return '<div class="row"><div class="field" style="flex:2"><label for="' + id + 'Ph">Phase' + (tr ? ' · <span style="color:' + tr.col + '">' + esc(tr.nom) + '</span>' : '') + '</label><select id="' + id + 'Ph" class="inp">' + PHASES.map(x => '<option' + (x === ph ? ' selected' : '') + '>' + x + '</option>').join('') + '</select></div><div class="field" style="flex:1"><label for="' + id + 'Gr">Groupe / place</label><input id="' + id + 'Gr" class="inp" maxlength="3" value="' + esc(sfx) + '" placeholder="A ou 3"></div></div><p class="mu" style="margin-top:-6px">Groupe pour une poule (A, B…), place jouée pour un match de classement (3 = match pour la 3e place).</p>';
+}
+function readPhase(id) {
+  let p = $('#' + id + 'Ph').value; const g = $('#' + id + 'Gr').value.trim();
+  if (p === 'Poule' && g) p += ' · ' + g.toUpperCase();
+  if (p === 'Match de classement' && num(g)) p += ' · ' + num(g);
+  return p;
+}
+function matchSheet(e, stayPool) {
+  const last = matchesOf(e.id).slice(-1)[0];
+  const ph = e.type === 'tournoi' ? (stayPool ? 'Poule' : nextPhase(e)) : '';
+  const grp = ph === 'Poule' && last && last.phase && last.phase.includes(' · ') ? last.phase.split(' · ')[1] : '';
   let h = '<h2>Nouveau match</h2><div class="field"><label for="amAdv">Adversaire</label><input id="amAdv" class="inp" autocomplete="off" placeholder="ex. AS Colline"></div>';
-  if (e.type === 'tournoi') h += '<div class="row"><div class="field" style="flex:2"><label for="amPh">Phase du tournoi</label><select id="amPh" class="inp">' + PHASES.map(x => '<option' + (x === lastPh ? ' selected' : '') + '>' + x + '</option>').join('') + '</select></div><div class="field" style="flex:1"><label for="amGr">Groupe</label><input id="amGr" class="inp" value="' + esc(grp) + '" placeholder="ex. A"></div></div>';
+  if (e.type === 'tournoi') h += phaseFields(e, ph, grp, 'am');
   h += '<div class="field"><span class="flab">Format</span><div class="chips" id="amFmt">' + ['5', '8', '11'].map(x => '<button type="button" class="chip' + (x === String(last ? last.format : e.format) ? ' on' : '') + '" data-k="' + x + '">à ' + x + '</button>').join('') + '</div></div>';
   h += '<div class="row"><button type="button" class="btn2" data-a="sheetClose">Annuler</button><button type="button" class="btn" id="amOk">Choisir les joueurs</button></div>';
   openSheet(h);
   $$('#amFmt .chip').forEach(b => b.onclick = () => { $$('#amFmt .chip').forEach(x => x.classList.remove('on')); b.classList.add('on'); });
   $('#amOk').onclick = () => {
     const adv = $('#amAdv').value.trim(); if (!adv) { toast('Indique l\'adversaire.'); return; }
-    let ph = '';
-    if (e.type === 'tournoi') { ph = $('#amPh').value; const g = $('#amGr').value.trim(); if (ph === 'Poule' && g) ph += ' · ' + g.toUpperCase(); }
-    const fmt = ($('#amFmt .chip.on') || {}).dataset ? $('#amFmt .chip.on').dataset.k : e.format;
-    const m = newMatch(e, adv, ph, fmt);
+    const p = e.type === 'tournoi' ? readPhase('am') : '';
+    const fmt = $('#amFmt .chip.on') ? $('#amFmt .chip.on').dataset.k : e.format;
+    const m = newMatch(e, adv, p, fmt);
     commit([put('Matchs', m)]);
     $('#sheet').hidden = true; go('compo', { mid: m.id });
   };
-};
+}
 ACT.sheetClose = () => closeSheet();
 /* V2.1 : modifier n'importe quel match (adversaire, phase, format ; date et lieu pour un amical) */
 ACT.editMatch = () => {
   const m = DB.Matchs[cur().p.mid]; if (!m) return; const e = DB.Rencontres[m.rencontre] || {};
-  const ph = phaseBase(m.phase), grp = String(m.phase || '').includes(' · ') ? m.phase.split(' · ')[1] : '';
+  const ph = phaseBase(m.phase), grp = String(m.phase || '').includes(' · ') ? m.phase.split(' · ')[1] : '';   // groupe (poule) ou place (classement)
   let h = '<h2>Modifier le match</h2><div class="field"><label for="emAdv">Équipe adverse</label><input id="emAdv" class="inp" autocomplete="off" value="' + esc(m.adversaire) + '"></div>';
-  if (e.type === 'tournoi') h += '<div class="row"><div class="field" style="flex:2"><label for="emPh">Phase du tournoi</label><select id="emPh" class="inp">' + PHASES.map(x => '<option' + (x === ph ? ' selected' : '') + '>' + x + '</option>').join('') + '</select></div><div class="field" style="flex:1"><label for="emGr">Groupe</label><input id="emGr" class="inp" maxlength="3" value="' + esc(grp) + '" placeholder="A"></div></div>';
+  if (e.type === 'tournoi') h += phaseFields(e, ph, grp, 'em');
   h += '<div class="field"><span class="flab">Format</span><div class="chips" id="emFmt">' + ['5', '8', '11'].map(x => '<button type="button" class="chip' + (x === String(m.format || e.format) ? ' on' : '') + '" data-k="' + x + '">à ' + x + '</button>').join('') + '</div></div>';
   if (e.type === 'amical') h += '<div class="row"><div class="field" style="flex:1"><label for="emD">Date</label><input id="emD" type="date" class="inp" value="' + esc(e.date) + '"></div><div class="field" style="flex:1"><label for="emH">Heure</label><input id="emH" type="time" class="inp" value="' + esc(e.heure) + '"></div></div>' +
     '<div class="field"><label for="emL">Lieu</label><select id="emL" class="inp">' + Object.keys(LIEU_LBL).map(k => '<option value="' + k + '"' + (k === e.lieu ? ' selected' : '') + '>' + LIEU_LBL[k] + '</option>').join('') + '</select></div>';
@@ -331,7 +385,7 @@ ACT.editMatch = () => {
   $('#emOk').onclick = () => {
     const adv = $('#emAdv').value.trim(); if (!adv) return toast('Indique l\'équipe adverse.');
     const row = { id: m.id, adversaire: adv, format: $('#emFmt .chip.on') ? $('#emFmt .chip.on').dataset.k : m.format };
-    if (e.type === 'tournoi') { let p = $('#emPh').value; const g = $('#emGr').value.trim(); if (p === 'Poule' && g) p += ' · ' + g.toUpperCase(); row.phase = p; }
+    if (e.type === 'tournoi') row.phase = readPhase('em');
     const ops = [put('Matchs', row)];
     if (e.type === 'amical' && e.id) ops.push(put('Rencontres', { id: e.id, titre: adv, date: $('#emD').value, heure: $('#emH').value, lieu: $('#emL').value }));
     commit(ops); closeSheet(); toast('Match modifié');
@@ -370,6 +424,54 @@ ACT.editEvent = () => {
     commit(ops); closeSheet();
   };
 };
+
+/* ---------- V3 : organisation du tournoi (équipes, poules, 1 à 3 arbres) ---------- */
+function orgaSummary(o) {
+  if (!o) return '';
+  const rg = treeRanges(o);
+  return [o.equipes ? o.equipes + ' équipes' : '', o.poules ? o.poules + ' poules' + (o.parPoule ? ' de ' + o.parPoule : '') : '', o.arbres.map((t, i) => (t.nom || TREE_DEF[i]) + (t.de ? ' (' + t.de + (t.a > t.de ? '-' + t.a : '') + ')' : '') + (rg[i].hi ? ' → ' + rg[i].lo + '-' + rg[i].hi : '')).join(' · ')].filter(Boolean).join(' · ');
+}
+function orgaCard(o, k) {
+  return '<div class="card"><p class="lbl">Organisation du tournoi</p><p class="mu">' + (o ? esc(orgaSummary(o)) : 'Nombre d\'équipes, poules, puis 1, 2 ou 3 arbres (Ligue des Champions, Ligue Europa, Ligue Conférence) pour calculer le classement final. Facultatif, modifiable plus tard.') + '</p><button type="button" class="btn2" data-a="orgaEdit" data-k="' + k + '">' + (o ? 'Modifier l\'organisation' : 'Définir l\'organisation') + '</button></div>';
+}
+let ORG = null;
+ACT.orgaEdit = (el, d) => {
+  const isNew = d && d.k === 'new';
+  if (isNew) readNewForm();
+  const e = isNew ? null : DB.Rencontres[cur().p.eid];
+  const cur0 = isNew ? cur().p.f.orga : orgaOf(e);
+  ORG = { isNew, eid: e && e.id, o: JSON.parse(JSON.stringify(cur0 || proposeOrga(24, 4, 6, 3))) };
+  orgaSheet();
+};
+function readOrgaSheet() {
+  const o = ORG.o, v = id => { const x = $('#' + id); return x ? x.value.trim() : ''; };
+  o.equipes = num(v('ogEq')) || ''; o.poules = num(v('ogPo')) || ''; o.parPoule = num(v('ogPp')) || '';
+  o.arbres.forEach((t, i) => { t.nom = v('ogN' + i) || TREE_DEF[i]; t.de = num(v('ogDe' + i)) || ''; t.a = num(v('ogA' + i)) || ''; t.n = num(v('ogNb' + i)) || ''; t.depart = v('ogDp' + i) || t.depart; });
+  if (!ORG.isNew) { const pl = num(v('ogPl')); o.place = pl || null; o.arbre = pl ? (treeForPlace(o, pl) >= 0 ? treeForPlace(o, pl) : null) : (o.arbre != null && o.arbres[o.arbre] ? o.arbre : null); }
+}
+function orgaSheet() {
+  const o = ORG.o, rg = treeRanges(o), inp = (id, val, w) => '<input id="' + id + '" class="inp" inputmode="numeric" value="' + esc(val == null ? '' : val) + '" style="text-align:center' + (w ? ';width:' + w : '') + '">';
+  let h = '<h2>Organisation du tournoi</h2><div class="row"><div class="field" style="flex:1"><label for="ogEq">Équipes</label>' + inp('ogEq', o.equipes) + '</div><div class="field" style="flex:1"><label for="ogPo">Poules</label>' + inp('ogPo', o.poules) + '</div><div class="field" style="flex:1"><label for="ogPp">Par poule</label>' + inp('ogPp', o.parPoule) + '</div></div>';
+  h += '<div class="field"><span class="flab">Après les poules</span><div class="seg">' + [1, 2, 3].map(n => '<button type="button" class="' + (o.arbres.length === n ? 'on' : '') + '" data-n="' + n + '">' + n + ' arbre' + (n > 1 ? 's' : '') + '</button>').join('') + '</div></div>';
+  o.arbres.forEach((t, i) => {
+    h += '<div class="card og-tree" style="border-top:4px solid ' + TREE_COL[i] + ';background:var(--s2)"><input id="ogN' + i + '" class="inp" value="' + esc(t.nom) + '" aria-label="Nom de l\'arbre ' + (i + 1) + '" style="font-weight:800">' +
+      '<div class="row" style="align-items:flex-end;flex-wrap:wrap"><div class="field" style="flex:1;min-width:80px"><label for="ogDe' + i + '">Places de poule</label><div class="row" style="gap:6px">' + inp('ogDe' + i, t.de, '54px') + '<span class="mu">à</span>' + inp('ogA' + i, t.a, '54px') + '</div></div><div class="field" style="width:76px"><label for="ogNb' + i + '">Équipes</label>' + inp('ogNb' + i, t.n) + '</div></div>' +
+      '<div class="field"><label for="ogDp' + i + '">Premier tour</label><select id="ogDp' + i + '" class="inp">' + ROUNDS.map(r => '<option' + (r === t.depart ? ' selected' : '') + '>' + r + '</option>').join('') + '</select></div>' +
+      (rg[i].hi ? '<p style="margin:0;font-weight:700;color:' + TREE_COL[i] + '">Classement final : ' + ordinal(rg[i].lo) + ' à ' + ordinal(rg[i].hi) + '</p>' : '<p class="mu" style="margin:0">Indique le nombre d\'équipes pour calculer les places.</p>') + '</div>';
+  });
+  if (!ORG.isNew) h += '<div class="field"><label for="ogPl">Place de l\'équipe dans sa poule (sortie de poule)</label>' + inp('ogPl', o.place, '80px') + '</div>';
+  h += '<button type="button" class="btn2" id="ogCalc">Recalculer à partir des équipes et des poules</button><div class="row"><button type="button" class="btn2" data-a="sheetClose">Annuler</button><button type="button" class="btn" id="ogOk">Enregistrer</button></div>';
+  openSheet(h);
+  $$('#sheet .seg [data-n]').forEach(b => b.onclick = () => { readOrgaSheet(); ORG.o = proposeOrga(o.equipes, o.poules, o.parPoule, +b.dataset.n, o); orgaSheet(); });
+  ['ogEq', 'ogPo'].forEach(id => $('#' + id).onchange = () => { readOrgaSheet(); if (o.equipes && o.poules) o.parPoule = Math.ceil(o.equipes / o.poules); ORG.o = proposeOrga(o.equipes, o.poules, o.parPoule, o.arbres.length, o); orgaSheet(); });
+  $$('#sheet .og-tree input, #sheet .og-tree select, #ogPp').forEach(x => x.onchange = () => { readOrgaSheet(); orgaSheet(); });
+  $('#ogCalc').onclick = () => { readOrgaSheet(); ORG.o = proposeOrga(o.equipes, o.poules, o.parPoule, o.arbres.length, o); orgaSheet(); };
+  $('#ogOk').onclick = () => {
+    readOrgaSheet();
+    if (ORG.isNew) { cur().p.f.orga = ORG.o; ORG = null; closeSheet(); return; }
+    commit([put('Rencontres', { id: ORG.eid, orga: ORG.o })]); ORG = null; closeSheet(); toast('Organisation enregistrée');
+  };
+}
 
 /* ---------- composition ---------- */
 const FORM = {
